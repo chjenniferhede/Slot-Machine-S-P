@@ -1,13 +1,8 @@
 """Saving and loading data with SQLite.
 
-Three rules apply everywhere in this file and everywhere that uses it.
-
-1. Every query uses ``?`` placeholders for values. Never build SQL by joining
-   strings together -- that is how SQL injection happens.
-2. Anything that moves money runs inside ``transaction()``, so a debit cannot
-   happen without its matching credit.
-3. Functions here are plain functions that take the connection first. No ORM,
-   so you can follow any query straight from the call to the SQL.
+Two rules hold everywhere: every query uses ``?`` placeholders for values,
+never string joining, and anything that moves money runs inside
+``transaction()``.
 """
 
 from __future__ import annotations
@@ -33,16 +28,8 @@ DEFAULT_DB_PATH = "casino.db"
 def connect(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """Open the database with the settings this system needs.
 
-    ``isolation_level=None``
-        Turns off Python's automatic transaction handling so we decide the
-        start and end of each transaction ourselves.
-
-    ``PRAGMA foreign_keys = ON``
-        SQLite ignores foreign keys unless you switch them on. Without this
-        line the REFERENCES rules in schema.sql do nothing.
-
-    ``PRAGMA journal_mode = WAL``
-        Survives a crash better, and reading does not block writing.
+    Foreign keys have to be switched on explicitly; SQLite ignores them
+    otherwise. Transactions are handled by ``transaction()``, not by Python.
     """
     conn = sqlite3.connect(str(path), isolation_level=None)
     conn.row_factory = sqlite3.Row
@@ -66,12 +53,8 @@ def init_db(conn: sqlite3.Connection) -> None:
 def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     """Run a block of work so it either all happens or none of it does.
 
-    BEGIN IMMEDIATE claims the write lock straight away, so a second writer
-    fails now rather than after doing work.
-
-    Note ``except BaseException`` rather than ``except Exception``. Ctrl-C
-    raises KeyboardInterrupt, which is not an Exception, so catching only
-    Exception would let a player cancel a losing spin and keep their stake.
+    Catches BaseException, not Exception, so that Ctrl-C mid-spin rolls back
+    instead of letting a player cancel a losing bet.
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -84,11 +67,7 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 
 
 def utc_now() -> str:
-    """The time now, as text like '2026-11-06T18:14:02Z'.
-
-    SQLite has no date type, and this format sorts correctly as plain text.
-    Always UTC, so daily limits cannot be reset twice by changing timezone.
-    """
+    """The time now, as text like '2026-11-06T18:14:02Z'. Always UTC."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
@@ -182,9 +161,8 @@ def get_balance(conn: sqlite3.Connection, user_id: int) -> Money:
 def adjust_balance(conn: sqlite3.Connection, user_id: int, delta: Money) -> Money:
     """Change the balance by ``delta`` and return the new balance.
 
-    One statement does the read and the write, so nothing can change in
-    between. The schema also refuses a negative balance, so an overdraft
-    fails even if a check in the code is missing.
+    The schema refuses a negative balance, so an overdraft fails here even
+    if a check in the calling code is missing.
     """
     conn.execute(
         "UPDATE accounts SET balance_cents = balance_cents + ? WHERE user_id = ?",
