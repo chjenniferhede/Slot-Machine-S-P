@@ -22,17 +22,18 @@ def secure_seed() -> bytes:
     return secrets.token_bytes(SEED_BYTES)
 
 
-def derive_stops(seed: bytes, ctx: str, strip_lens: list[int]) -> list[int]:
+def derive_stops(seed: bytes, strip_lens: list[int]) -> list[int]:
     """Where each reel stops.
 
-    ``ctx`` names the spin, so one seed gives different reels on different
-    spins. ``strip_lens`` is how many positions each reel has.
+    ``strip_lens`` is how many positions each reel has, one number per reel.
+    Each reel gets its own label, so one seed gives a different answer for
+    each of them.
     """
     if len(seed) != SEED_BYTES:
         raise ValueError(f"seed must be {SEED_BYTES} bytes, got {len(seed)}")
     stops = []
     for reel_number, strip_length in enumerate(strip_lens):
-        label = ctx + "|reel" + str(reel_number)
+        label = "reel" + str(reel_number)
         stops.append(_uniform_below(seed, label, strip_length))
     return stops
 
@@ -40,9 +41,9 @@ def derive_stops(seed: bytes, ctx: str, strip_lens: list[int]) -> list[int]:
 def _uniform_below(seed: bytes, label: str, n: int) -> int:
     """A number from 0 to n-1, with every value equally likely.
 
-    HMAC turns the seed and label into 4 random bytes. Values at or above
-    ``limit`` are thrown away and the next counter tried, which keeps every
-    reel position equally likely. Retries are rare.
+    HMAC (hash with a secret key) turns the seed and label into 4 random bytes. 
+    Values at or above ``limit`` are thrown away and the next counter tried, 
+    which keeps every reel position equally likely. 
     """
     if n <= 0:
         raise ValueError("strip length must be positive")
@@ -54,6 +55,7 @@ def _uniform_below(seed: bytes, label: str, n: int) -> int:
         message = label + "|" + str(counter)
         digest = hmac.new(seed, message.encode(), hashlib.sha256).digest()
         first_four_bytes = digest[:4]
+        # Convert the first four bytes of the digest to an integer in big-endian order.
         value = int.from_bytes(first_four_bytes, "big")
 
         if value < limit:

@@ -21,33 +21,42 @@ def test_seed_length_and_type() -> None:
 def test_determinism() -> None:
     """The replay property: a logged seed must reproduce the logged stops."""
     seed = secure_seed()
-    first = derive_stops(seed, "game|1", [32, 32, 32])
+    first = derive_stops(seed, [32, 32, 32])
     for _ in range(100):
-        assert derive_stops(seed, "game|1", [32, 32, 32]) == first
+        assert derive_stops(seed, [32, 32, 32]) == first
 
 
 def test_different_seeds_differ() -> None:
     """Distinct seeds must give distinct stops.
 
-    Over a 5-reel, 32-position space (33.5M outcomes) rather than 3 reels
-    (32,768), because at 32,768 the birthday bound alone produces about 15
-    collisions in 1000 draws and the test would be measuring that, not the
-    generator. Seeds are derived deterministically so the result is identical
-    on every run and the test cannot flake.
+    Measured over 8 reels rather than 3. With 3 reels there are only 32,768
+    possible results, so about 15 of 1000 draws would collide by chance and
+    the test would be measuring that rather than the generator. With 8 reels
+    there are 1.1 trillion, so a collision is vanishingly unlikely.
     """
     seeds = [hashlib.sha256(str(i).encode()).digest() for i in range(1000)]
-    results = {tuple(derive_stops(s, "g|1", [32] * 5)) for s in seeds}
+    results = {tuple(derive_stops(s, [32] * 8)) for s in seeds}
     assert len(results) == len(seeds)
 
 
-def test_ctx_changes_output() -> None:
-    seed = secure_seed()
-    assert derive_stops(seed, "g|1", [32, 32, 32]) != derive_stops(seed, "g|2", [32, 32, 32])
+def test_reels_are_independent() -> None:
+    """One seed must give a different answer for each reel.
+
+    Without the per-reel label every reel would ask HMAC the same question
+    and get the same answer, so every spin would show three matching symbols.
+    """
+    all_three_same = 0
+    for i in range(200):
+        seed = hashlib.sha256(str(i).encode()).digest()
+        stops = derive_stops(seed, [32, 32, 32])
+        if stops[0] == stops[1] == stops[2]:
+            all_three_same = all_three_same + 1
+    assert all_three_same < 5
 
 
 def test_rejects_bad_seed_length() -> None:
     with pytest.raises(ValueError):
-        derive_stops(b"short", "g|1", [32])
+        derive_stops(b"short", [32])
 
 
 def test_rejects_zero_length_strip() -> None:
