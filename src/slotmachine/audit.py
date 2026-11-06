@@ -72,10 +72,6 @@ def _entry_hash(
     previous_hash: str, timestamp: str, actor: str, action: str, detail: str
 ) -> str:
     """Return the hash of one entry, as 64 hex characters.
-
-    The five fields are joined as "length:value" before hashing. Without the
-    lengths, the fields ("ab", "c") and ("a", "bc") would both join into "abc"
-    and hash the same, letting two different entries share a hash.
     """
     fields = [previous_hash, timestamp, actor, action, detail]
 
@@ -94,11 +90,6 @@ def write(
     ``actor`` is the username responsible, ``action`` is one of the names on
     :class:`Action`, and ``detail`` is free text describing what happened,
     such as an amount or a game name.
-
-    Call this inside the caller's transaction, so that the action and the
-    record of it are saved together or undone together.
-
-    Never put a secret in ``detail`` -- no passwords, card numbers or tokens.
     """
     from slotmachine import storage  # imported here to avoid a circular import
 
