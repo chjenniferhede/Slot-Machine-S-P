@@ -1,30 +1,20 @@
-"""Cryptographically secure randomness.
+"""Secure random numbers.
 
-This module is the ONLY source of entropy in the program. Nothing else may
-import ``secrets`` or ``os.urandom``, and nothing anywhere may import
-``random``.
+All randomness in this program comes from here. Nothing else should import
+``secrets``, and nothing anywhere should import ``random``.
 
-ProvidedResources/SecuredRNG.md names ``random()`` as Python's unsafe function
-and ``secrets`` as the secure one. The reason is stronger than "low quality":
-``random`` is a Mersenne Twister, and observing 624 consecutive outputs reveals
-its entire internal state, making every future value predictable. It is a
-reversible generator, not merely a weak one.
+``random`` is unsafe for a slot machine: watch enough of its output and you can
+work out its internal state and predict every future value.
 
-THE REPLAY PROPERTY
--------------------
-Every spin draws a fresh 32-byte seed and derives its reel stops from that seed
-deterministically. The seed is recorded with the spin. This gives two
-properties that look contradictory but are not:
+A spin works in two steps:
 
-* Play is unpredictable, because the seed is fresh OS entropy that nobody sees
-  before the spin resolves.
-* Any recorded spin is verifiable, because feeding the logged seed back through
-  ``derive_stops`` must reproduce the logged stops exactly.
+1. Draw a fresh 32-byte seed from the operating system.
+2. Turn that seed into reel positions.
 
-That is how the spec can demand both cryptographically secure generation and
-that Commissioners see "the random seeds used for each round".
-
-Do not "optimise" the determinism away. It is the fairness guarantee.
+Step 2 always gives the same positions for the same seed. So a saved seed can
+be replayed later to check a spin was not rigged, even though the spin was
+unpredictable at the time. Do not remove that -- it is how we prove the game
+is fair.
 """
 
 from __future__ import annotations
@@ -38,15 +28,15 @@ SEED_BYTES: Final[int] = 32
 
 
 def secure_seed() -> bytes:
-    """A fresh 32-byte seed from the operating system's CSPRNG."""
+    """A fresh 32-byte seed from the operating system."""
     return secrets.token_bytes(SEED_BYTES)
 
 
 def derive_stops(seed: bytes, ctx: str, strip_lens: list[int]) -> list[int]:
-    """Derive one reel stop per strip, deterministically, from a seed.
+    """Work out where each reel stops.
 
-    The same seed, ctx and strip lengths always produce the same stops, which
-    is what makes a recorded spin replayable.
+    ``ctx`` labels the spin, so the same seed used for a different spin gives
+    different reels. ``strip_lens`` is how many positions each reel has.
     """
     if len(seed) != SEED_BYTES:
         raise ValueError(f"seed must be {SEED_BYTES} bytes, got {len(seed)}")
@@ -56,37 +46,25 @@ def derive_stops(seed: bytes, ctx: str, strip_lens: list[int]) -> list[int]:
 
 
 def _uniform_below(seed: bytes, label: str, n: int) -> int:
-    """A uniformly distributed integer in [0, n), with no modulo bias.
+    """Pick a number from 0 to n-1, with every value equally likely.
 
-    WHY NOT ``value % n``
-    ---------------------
-    A 32-bit value is uniform over 0 .. 4294967295, which is 2**32 values. With
-    a 24-position reel strip, 2**32 / 24 is not a whole number: remainders 0-15
-    occur 178956971 times and remainders 16-23 occur 178956970 times. The first
-    sixteen positions on the reel come up slightly more often than the last
-    eight.
+    Why not just ``value % n``? There are 2**32 possible values. If n does not
+    divide into that evenly, the low numbers come up slightly more often, so
+    some reel positions would appear more than others. Instead we throw away
+    values in the uneven tail and try again. Retries are very rare.
 
-    At 32 bits that bias is about one part in 179 million -- genuinely
-    negligible. But the identical code with a smaller source or a larger n
-    produces a bias big enough to move the RTP, and it looks exactly the same.
-    Rejection sampling removes the question: discard values in the uneven tail
-    and try again. The expected number of retries here is below 1.000001, so it
-    costs nothing.
-
-    WHY HMAC rather than sha256(seed + label)
-    -----------------------------------------
-    Plain concatenation is ambiguous -- "reel1" + "0" and "reel10" + "" produce
-    the same bytes -- and the construction is open to length extension. HMAC
-    separates key from message, so distinct labels give independent outputs.
+    We use HMAC rather than hashing the seed and label joined together,
+    because joining is ambiguous: "reel1" + "0" and "reel10" + "" produce the
+    same text.
     """
     if n <= 0:
         raise ValueError("strip length must be positive")
 
-    limit = (2**32 // n) * n  # largest multiple of n that fits in 32 bits
+    limit = (2**32 // n) * n  # biggest multiple of n that fits in 32 bits
     counter = 0
     while True:
         digest = hmac.new(seed, f"{label}|{counter}".encode(), hashlib.sha256).digest()
         value = int.from_bytes(digest[:4], "big")
         if value < limit:
             return value % n
-        counter += 1
+        counter += 1  # landed in the tail, try the next one

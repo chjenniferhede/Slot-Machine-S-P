@@ -1,29 +1,15 @@
-"""Exact money arithmetic.
+"""Money, counted in whole cents.
 
-Every monetary value in this system is an integer number of cents, wrapped in
-the `Money` type defined here. Nothing else is permitted.
+Every amount in this system is an integer number of cents.
 
-WHY NOT float
--------------
-`0.1 + 0.2 == 0.30000000000000004`. Binary floating point cannot represent most
-decimal fractions exactly, so error accumulates as payouts are added to a
-balance. In a system that performs hundreds of thousands of small additions the
-drift becomes real money, and an attacker who understands the rounding can
-provoke it deliberately.
+Not float, because 0.1 + 0.2 gives 0.30000000000000004. Add up enough payouts
+and that error becomes real money.
 
-WHY NOT Decimal
----------------
-`Decimal` is exact, but it permits fractional cents. A payout of $0.005 is not a
-value this system is allowed to hold, and a type that can represent it invites a
-rounding decision somewhere downstream. Integer cents cannot express an illegal
-amount in the first place.
+Not Decimal, because it allows half a cent, and no amount here should ever be
+smaller than one cent.
 
-OVERFLOW
---------
-Python integers are arbitrary precision and never overflow, but the SQLite
-INTEGER columns they are stored in are signed 64-bit. A value beyond that range
-fails or corrupts at the database boundary, far from its cause, so every
-operation here checks the range up front.
+Python integers never overflow, but the database columns they are saved into
+hold 64-bit numbers, so the range is checked here instead of failing later.
 """
 
 from __future__ import annotations
@@ -38,11 +24,9 @@ MIN_CENTS: Final[int] = -(2**63)
 # Accepts: "12", "12.5", "12.50", "$12.50", "1,234.56", " 12.50 "
 # Rejects: "12.567" (sub-cent), "1e5", "0x10", "12.50.50", "" and anything else.
 #
-# NOTE re.ASCII. Without it, Python's \d matches every Unicode decimal digit --
-# Arabic-Indic, Devanagari, fullwidth and so on -- and int() happily converts
-# them. "\u0665" would parse as $5.00 while being visually unrecognisable to
-# anyone reading a log or an audit trail. Money input is ASCII digits only.
-# (CWE-176, improper handling of Unicode encoding.)
+# Note re.ASCII and the explicit [0-9]. Python's \d also matches digits from
+# other writing systems, and int() converts them, so "\u0665" would be read as
+# $5.00 while looking like nothing recognisable in a log. Digits 0-9 only.
 _AMOUNT_RE: Final[re.Pattern[str]] = re.compile(
     r"""
     ^[ \t]*                   # leading space
@@ -57,29 +41,26 @@ _AMOUNT_RE: Final[re.Pattern[str]] = re.compile(
 
 
 class MoneyError(ValueError):
-    """Invalid monetary amount.
-
-    Messages are written to be shown to a user verbatim, so the CLI never has to
-    invent its own wording and never has to surface a traceback.
-    """
+    """A bad amount. The message is safe to show the user as-is."""
 
 
 class Money:
-    """An exact amount of money, stored as an integer number of cents.
+    """An exact amount of money, stored as a whole number of cents.
 
-    Immutable. A balance held by one part of the system cannot be mutated from
-    another.
+    Cannot be changed after it is created, so one part of the program cannot
+    alter a balance another part is holding.
     """
 
     __slots__ = ("_cents",)
 
-    # Declared for the type checker. The value is set via object.__setattr__
-    # in __init__ because __setattr__ is overridden to enforce immutability.
+    # Declared so the type checker can see it. It is set with
+    # object.__setattr__ below, because normal assignment is blocked.
     _cents: int
 
     def __init__(self, cents: int) -> None:
         if isinstance(cents, bool) or not isinstance(cents, int):
-            # bool is a subclass of int; Money(True) is always a bug.
+            # In Python a bool counts as an int, so Money(True) would quietly
+            # become one cent. That is always a mistake.
             raise MoneyError(f"amount must be a whole number of cents, got {cents!r}")
         _check_range(cents)
         object.__setattr__(self, "_cents", cents)
@@ -92,10 +73,7 @@ class Money:
 
     @classmethod
     def parse(cls, text: str) -> Money:
-        """Parse user input into an exact amount.
-
-        Raises MoneyError with a user-facing message on anything invalid.
-        """
+        """Turn something the user typed into an exact amount."""
         if not isinstance(text, str):
             raise MoneyError("enter an amount, for example 12.50")
 
@@ -103,8 +81,8 @@ class Money:
         if not stripped:
             raise MoneyError("enter an amount, for example 12.50")
 
-        # Reject sub-cent precision explicitly so the message is useful. Without
-        # this, "12.567" would simply fail the regex with a generic error.
+        # Checked separately so the user gets a useful message. Otherwise
+        # "12.567" would just fail with the generic "not a valid amount".
         if re.match(r"^[ \t]*\$?[ \t]*[0-9,]+\.[0-9]{3,}[ \t]*$", stripped, re.ASCII):
             raise MoneyError("amounts cannot be smaller than one cent")
 
@@ -155,21 +133,19 @@ class Money:
         return Money(_checked(-self._cents))
 
     def times(self, multiplier: int) -> Money:
-        """Multiply by an integer payout multiplier.
+        """Multiply by a payout multiplier, such as 20 for a 20x win.
 
-        Integer only. A fractional multiplier would produce sub-cent amounts,
-        which is precisely what this type exists to prevent.
+        Whole numbers only -- a fraction would create part of a cent.
         """
         if isinstance(multiplier, bool) or not isinstance(multiplier, int):
             raise MoneyError("payout multipliers must be whole numbers")
         return Money(_checked(self._cents * multiplier))
 
     def percent(self, pct: int) -> Money:
-        """A whole-percent fraction, rounded down to the cent.
+        """A whole percentage of this amount, rounded down to the cent.
 
-        Used for things like a hold costing 50% of the original bet. Rounding
-        down is deliberate: where a split is inexact, the remainder stays with
-        the house rather than being created out of nothing.
+        Rounding down on purpose: if the split is not exact, the leftover
+        stays with the house rather than being invented out of nothing.
         """
         if isinstance(pct, bool) or not isinstance(pct, int):
             raise MoneyError("percentages must be whole numbers")
@@ -210,7 +186,7 @@ class Money:
     # -- display ---------------------------------------------------------
 
     def __str__(self) -> str:
-        """'$12.50'. Always two decimals, always signed consistently."""
+        """Format as '$12.50'. Always two decimal places."""
         sign = "-" if self._cents < 0 else ""
         whole, frac = divmod(abs(self._cents), 100)
         return f"{sign}${whole:,}.{frac:02d}"

@@ -1,19 +1,13 @@
-"""SQLite storage: connection, schema, transactions, and repository functions.
+"""Saving and loading data with SQLite.
 
-Three rules hold throughout this module and every module that uses it.
+Three rules apply everywhere in this file and everywhere that uses it.
 
-1. EVERY query uses ``?`` bound parameters. Never an f-string, never ``%``,
-   never ``.format()``, never concatenation. The driver sends the statement and
-   the data over separate channels, so data is never parsed as SQL. The unsafe
-   form is syntactically easy in Python, which is exactly why the rule is
-   absolute rather than a matter of judgement. (OWASP A03, CWE-89.)
-
-2. Anything that moves money runs inside ``transaction()``. A debit without its
-   matching credit is lost money.
-
-3. Repository functions are plain functions taking the connection first. No
-   ORM, no session objects, no lazy loading -- a reviewer can follow any single
-   query from the call site to the SQL without indirection.
+1. Every query uses ``?`` placeholders for values. Never build SQL by joining
+   strings together -- that is how SQL injection happens.
+2. Anything that moves money runs inside ``transaction()``, so a debit cannot
+   happen without its matching credit.
+3. Functions here are plain functions that take the connection first. No ORM,
+   so you can follow any query straight from the call to the SQL.
 """
 
 from __future__ import annotations
@@ -37,24 +31,18 @@ DEFAULT_DB_PATH = "casino.db"
 
 
 def connect(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    """Open a connection configured the way the rest of the system expects.
-
-    Three settings worth understanding, because each is a real decision:
+    """Open the database with the settings this system needs.
 
     ``isolation_level=None``
-        Turns off the sqlite3 module's implicit transaction management so we
-        issue BEGIN ourselves. The default would open and commit transactions
-        at times of its choosing, which is not the same as the boundaries our
-        money operations actually need.
+        Turns off Python's automatic transaction handling so we decide the
+        start and end of each transaction ourselves.
 
     ``PRAGMA foreign_keys = ON``
-        SQLite ignores foreign keys by default, for backwards compatibility
-        with databases written before it supported them. Without this line the
-        REFERENCES clauses in schema.sql do nothing at all. (OWASP A05,
-        CWE-1188: an insecure default that must be explicitly overridden.)
+        SQLite ignores foreign keys unless you switch them on. Without this
+        line the REFERENCES rules in schema.sql do nothing.
 
     ``PRAGMA journal_mode = WAL``
-        Better crash behaviour and readers do not block the writer.
+        Survives a crash better, and reading does not block writing.
     """
     conn = sqlite3.connect(str(path), isolation_level=None)
     conn.row_factory = sqlite3.Row
@@ -76,16 +64,14 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 @contextmanager
 def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    """Run a block as one atomic unit.
+    """Run a block of work so it either all happens or none of it does.
 
-    BEGIN IMMEDIATE rather than plain BEGIN: it takes the write lock up front,
-    so a second concurrent writer fails immediately instead of doing work and
-    then failing at COMMIT.
+    BEGIN IMMEDIATE claims the write lock straight away, so a second writer
+    fails now rather than after doing work.
 
-    Note the ``except BaseException``. Catching ``Exception`` would be a bug:
-    ``KeyboardInterrupt`` does not inherit from it, so a player pressing Ctrl-C
-    after seeing a losing reel would leave the transaction open and could keep
-    their stake. Interrupts must roll back like anything else.
+    Note ``except BaseException`` rather than ``except Exception``. Ctrl-C
+    raises KeyboardInterrupt, which is not an Exception, so catching only
+    Exception would let a player cancel a losing spin and keep their stake.
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -98,18 +84,16 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 
 
 def utc_now() -> str:
-    """Current time as ISO 8601 UTC, e.g. '2026-11-06T18:14:02Z'.
+    """The time now, as text like '2026-11-06T18:14:02Z'.
 
-    SQLite has no date type. ISO 8601 in UTC sorts correctly as plain text,
-    which is the only property we actually need from a timestamp here. UTC
-    throughout: a local-time daily bucket would let a user in the right
-    timezone reset their deposit limit twice in one day.
+    SQLite has no date type, and this format sorts correctly as plain text.
+    Always UTC, so daily limits cannot be reset twice by changing timezone.
     """
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def today_bucket() -> str:
-    """The UTC calendar date, used to scope daily deposit and withdrawal limits."""
+    """Today's date in UTC, used to reset daily deposit and withdrawal limits."""
     return datetime.now(timezone.utc).date().isoformat()
 
 
@@ -196,12 +180,11 @@ def get_balance(conn: sqlite3.Connection, user_id: int) -> Money:
 
 
 def adjust_balance(conn: sqlite3.Connection, user_id: int, delta: Money) -> Money:
-    """Move the balance by ``delta`` and return the new balance.
+    """Change the balance by ``delta`` and return the new balance.
 
-    The read and the write happen in one statement so there is no window
-    between checking the balance and changing it (CWE-367, TOCTOU). The
-    ``balance_cents >= 0`` CHECK constraint in the schema rejects an overdraft
-    even if an application-level check is missing or has been removed.
+    One statement does the read and the write, so nothing can change in
+    between. The schema also refuses a negative balance, so an overdraft
+    fails even if a check in the code is missing.
     """
     conn.execute(
         "UPDATE accounts SET balance_cents = balance_cents + ? WHERE user_id = ?",

@@ -1,31 +1,20 @@
-"""Tamper-evident audit log.
+"""Audit log that cannot be quietly edited.
 
-The spec asks for "system logging for auditing purposes". A plain append-only
-table meets the letter of that and not the purpose: anyone with write access
-can edit or delete a row and leave no trace, and a log an insider can rewrite
-is not evidence of anything.
+Every entry stores the hash of the entry before it, so the entries form a
+chain:
 
-Each entry therefore stores the hash of the entry before it, forming a chain:
+    entry 1:  prev_hash = 000...0
+    entry 2:  prev_hash = hash of entry 1
+    entry 3:  prev_hash = hash of entry 2
 
-    entry 1:  prev_hash = 000...0            hash = H(prev | ts | actor | ...)
-    entry 2:  prev_hash = <hash of entry 1>  hash = H(prev | ts | actor | ...)
-    entry 3:  prev_hash = <hash of entry 2>  hash = H(prev | ts | actor | ...)
+Change an old entry and its hash changes too, which breaks every link after
+it. ``verify_chain`` walks the chain and reports the first break.
 
-Changing any historical entry changes its hash, which breaks every link after
-it. ``verify_chain`` finds the first break.
+What it cannot catch: deleting the newest entries. Nothing comes after them to
+disagree, so what is left still looks fine.
 
-WHAT THIS DOES NOT DETECT
--------------------------
-Truncation of the most recent entries. Deleting the last fifty rows leaves a
-chain that is internally consistent, because nothing after them survives to
-disagree. Detecting that requires recording the expected length somewhere
-outside the chain. Know this limit and state it rather than overclaiming the
-control -- the ``id gap`` check below catches deletions in the middle, not at
-the end.
-
-The schema also carries BEFORE UPDATE and BEFORE DELETE triggers on this
-table, so tampering has to happen outside the application entirely. The
-triggers are the lock; this chain is the detector.
+The database also blocks UPDATE and DELETE on this table. That stops tampering
+through the app; the chain catches tampering that goes around it.
 """
 
 from __future__ import annotations
@@ -40,11 +29,10 @@ GENESIS_HASH: Final[str] = "0" * 64
 
 
 class Action:
-    """Canonical action names.
+    """The names of things we log.
 
-    Defined in one place so that Layers 2-5 cannot invent variants -- a log
-    that calls the same event ``login_fail`` in one module and
-    ``auth.login.failure`` in another cannot be filtered or counted reliably.
+    Kept in one place so two modules cannot spell the same event differently,
+    which would make the log impossible to filter or count.
     """
 
     USER_REGISTER: Final[str] = "user.register"
@@ -74,12 +62,11 @@ class VerifyResult:
 
 
 def _entry_hash(prev_hash: str, ts: str, actor: str, action: str, detail: str) -> str:
-    """Hash one entry, with every field length-prefixed.
+    """Hash one entry.
 
-    The prefixes are not decoration. Without them the fields ("ab", "c") and
-    ("a", "bc") both concatenate to "abc" and hash identically, so an attacker
-    who controls part of a detail string could craft two different entries
-    sharing one hash. Length prefixing makes the encoding unambiguous.
+    Each field is written as "length:value". Without the lengths, the fields
+    ("ab", "c") and ("a", "bc") both join into "abc" and hash the same, so two
+    different entries could share a hash.
     """
     payload = "".join(f"{len(p)}:{p}" for p in (prev_hash, ts, actor, action, detail))
     return hashlib.sha256(payload.encode()).hexdigest()
@@ -88,16 +75,14 @@ def _entry_hash(prev_hash: str, ts: str, actor: str, action: str, detail: str) -
 def write(
     conn: sqlite3.Connection, actor: str, action: str, detail: str = ""
 ) -> None:
-    """Append one entry.
+    """Add one entry to the end of the log.
 
-    Must be called inside the caller's transaction, so that the action being
-    logged and the record of it commit or roll back together. An audit entry
-    for something that did not happen is as bad as a missing one.
+    Call this inside the caller's transaction, so the action and the record of
+    it are saved or undone together.
 
-    NEVER pass a secret in ``detail``: no passwords, no password hashes, no
-    card numbers, no CVVs, no tokens. (CWE-532.)
+    Never put a secret in ``detail`` -- no passwords, card numbers or tokens.
     """
-    from slotmachine import storage  # local import: storage imports nothing here
+    from slotmachine import storage  # imported here to avoid a circular import
 
     ts = storage.utc_now()
     row = conn.execute("SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
@@ -110,16 +95,11 @@ def write(
 
 
 def verify_chain(conn: sqlite3.Connection) -> VerifyResult:
-    """Walk the chain and report the first break.
+    """Check the whole chain and report the first problem found.
 
-    Three distinct failure modes:
-
-    * ``hash mismatch`` -- a field in the row was edited, so the recomputed
-      hash no longer matches the stored one.
-    * ``broken link``   -- this row's prev_hash does not match the previous
-      row's hash, which is what a deletion or a reordering looks like.
-    * ``id gap``        -- the id sequence skips, which catches a deletion
-      whose neighbours were also rewritten.
+    * ``hash mismatch`` -- the row was edited.
+    * ``broken link``   -- this row does not point at the one before it.
+    * ``id gap``        -- an id is missing, so a row was deleted.
     """
     prev_hash = GENESIS_HASH
     expected_id = 1
@@ -174,8 +154,8 @@ def read(
 
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     params.extend((limit, offset))
-    # The WHERE clause is assembled from fixed literals above; every value is
-    # bound. No caller input reaches the statement text.
+    # The WHERE text is built only from the fixed strings above. Every value
+    # the caller passed is bound with ?, so none of it becomes SQL.
     return list(
         conn.execute(
             f"SELECT * FROM audit_log{where} ORDER BY id DESC LIMIT ? OFFSET ?",

@@ -1,17 +1,14 @@
--- Schema for the Big Casino slot machine.
+-- Tables for the Big Casino slot machine.
 --
--- Applied idempotently by storage.init_db(). Every table uses IF NOT EXISTS so
--- that running it against an existing database is a no-op.
+-- Applied by storage.init_db(). Everything uses IF NOT EXISTS, so running it
+-- again on an existing database does nothing.
 --
--- Foreign keys are enabled per-connection in storage.connect(), NOT here --
--- PRAGMA foreign_keys is a connection-level setting and SQLite defaults it OFF
--- for backwards compatibility. Without that pragma the REFERENCES clauses below
--- are decorative.
+-- Foreign keys are switched on in storage.connect(), not here -- it is a
+-- per-connection setting, and SQLite leaves it off by default.
 
 CREATE TABLE IF NOT EXISTS users (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    -- COLLATE NOCASE stops 'Alice' and 'alice' becoming two accounts, which is
-    -- a classic source of account-confusion attacks.
+    -- COLLATE NOCASE stops 'Alice' and 'alice' being two different accounts.
     username        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
     pw_hash         TEXT    NOT NULL,
     role            TEXT    NOT NULL CHECK (role IN ('player', 'technician', 'commissioner')),
@@ -23,18 +20,17 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS accounts (
     user_id               INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    -- Defence in depth: the application forbids overdrafts, and so does the
-    -- database. If a Phase II backdoor removes the application check, this
-    -- constraint still fires.
+    -- The code refuses overdrafts and so does this. If someone removes the
+    -- check in the code, this one still stops it.
     balance_cents         INTEGER NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),
     daily_deposit_cents   INTEGER NOT NULL DEFAULT 0 CHECK (daily_deposit_cents >= 0),
     daily_withdraw_cents  INTEGER NOT NULL DEFAULT 0 CHECK (daily_withdraw_cents >= 0),
     day_bucket            TEXT    NOT NULL
 );
 
--- Card data is NEVER stored. Only an opaque processor token, the last four
--- digits for display, and the brand. See ProvidedResources/SecureRNG.md,
--- "Minimise the Storage of Sensitive Information".
+-- Card numbers are never stored. Only a meaningless token from the payment
+-- processor, plus the last four digits and the brand so we can show the user
+-- which card is which.
 CREATE TABLE IF NOT EXISTS payment_methods (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -46,8 +42,8 @@ CREATE TABLE IF NOT EXISTS payment_methods (
     added_at   TEXT    NOT NULL
 );
 
--- Games are data, not code. config_json holds a validated GameSpec, which is
--- what makes "add a game" possible without a code change.
+-- A game is data, not code. config_json holds its reels and paytable, so a
+-- new game can be added without changing any Python.
 CREATE TABLE IF NOT EXISTS games (
     id           TEXT    PRIMARY KEY,
     name         TEXT    NOT NULL,
@@ -71,21 +67,20 @@ CREATE TABLE IF NOT EXISTS spins (
     user_id         INTEGER NOT NULL REFERENCES users(id),
     game_id         TEXT    NOT NULL REFERENCES games(id),
     bet_cents       INTEGER NOT NULL CHECK (bet_cents > 0),
-    -- Raw 32 bytes, not hex text: half the storage and no encoding ambiguity.
+    -- The raw 32 bytes, not text. This is what lets a spin be replayed.
     seed            BLOB    NOT NULL,
     stops_json      TEXT    NOT NULL,
     payout_cents    INTEGER NOT NULL CHECK (payout_cents >= 0),
     is_hold_respin  INTEGER NOT NULL DEFAULT 0 CHECK (is_hold_respin IN (0, 1)),
-    -- Commissioner test spins live in this same table so that the regulator is
-    -- exercising the real engine rather than a copy that could drift from it.
-    -- The cost is that EVERY player-facing and accounting query must filter on
-    -- this column. Forgetting to is the most likely bug in the stats layer.
+    -- Commissioner test spins live in this table too, so the regulator tests
+    -- the real game rather than a copy. Use the live_spins view below instead
+    -- of filtering on this by hand.
     is_test         INTEGER NOT NULL DEFAULT 0 CHECK (is_test IN (0, 1)),
     created_at      TEXT    NOT NULL
 );
 
--- Append-only, hash-chained. Layer 1 (#2) owns the writer and the verifier;
--- the table lives here because the schema is applied in one place.
+-- The audit log. Each row stores the hash of the row before it, so edits can
+-- be detected. See audit.py.
 CREATE TABLE IF NOT EXISTS audit_log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     ts         TEXT NOT NULL,
@@ -106,26 +101,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_open ON sessions(user_id, ended_at);
 
 
 -- ---------------------------------------------------------------------------
--- Append-only enforcement for spins and the audit log
+-- Spins and audit entries can only be added, never changed or removed
 -- ---------------------------------------------------------------------------
 --
--- A spin is a historical fact. Once written it must never change, and it must
--- never disappear. Enforcing that in the database rather than by convention
--- closes a specific attack:
+-- A spin is a record of something that happened, so it should never change.
 --
---   Without these triggers, hiding a fraudulent spin does not require deleting
---   it. Setting is_test = 1 is enough -- the spin keeps its money movement but
---   vanishes from every diagnostic, every RTP figure and every player
---   statistic, because all of those filter test spins out. That is a one-word
---   backdoor. These triggers make it fail loudly instead.
---
--- The same reasoning applies to audit_log, where it matters even more: the
--- hash chain detects tampering after the fact, and these triggers prevent a
--- whole class of it happening at all. Defence in depth -- the chain is the
--- detector, the triggers are the lock.
---
--- (OWASP A08 Software and Data Integrity Failures; CWE-mapping notes in
--- docs/OWASP.md.)
+-- Without these, hiding a spin would not even need a DELETE. Setting
+-- is_test = 1 would do it: the money still moved, but the spin disappears
+-- from every report, because reports leave test spins out.
 
 CREATE TRIGGER IF NOT EXISTS spins_are_immutable
 BEFORE UPDATE ON spins
@@ -139,16 +122,11 @@ BEGIN
     SELECT RAISE(ABORT, 'spins are append-only: a recorded spin cannot be deleted');
 END;
 
--- Immutability is only half the problem. These triggers stop is_test being
--- CHANGED after the fact; they do nothing about it being set to 1 when the row
--- is first written, which hides a spin just as effectively and is a one-line
--- change at any call site. Worse, it can be made conditional
--- (is_test = bet > $1000) so only the profitable spins disappear.
+-- The triggers above stop is_test being changed later, but not being set to 1
+-- when the row is first written, which hides the spin just as well.
 --
--- So the flag is not something the application is trusted to assert. A spin is
--- a test spin if and only if a commissioner made it, and that is checkable
--- here against the users table. Application code can now pass whatever it
--- likes; a lie is rejected at the point of insert.
+-- So the code does not get to decide. A spin is a test spin only if a
+-- commissioner made it, and that is checked here against the users table.
 
 CREATE TRIGGER IF NOT EXISTS spins_test_flag_must_match_role
 BEFORE INSERT ON spins
@@ -174,17 +152,12 @@ END;
 
 
 -- ---------------------------------------------------------------------------
--- Views: make the safe query the easy one
+-- Views, so the safe query is also the easy one
 -- ---------------------------------------------------------------------------
 --
--- Commissioner test spins share the spins table so that the regulator is
--- exercising the real engine rather than a copy that could drift from it. The
--- cost is that every accounting and player-facing query must filter them out,
--- and forgetting once silently corrupts a number nobody is checking.
---
--- These views remove the need to remember. Application code reads live_spins
--- or test_spins by name; nothing outside storage.record_spin() should mention
--- the spins table directly, and a test in Layer 6 (#7) enforces that.
+-- Without these, every report would have to remember WHERE is_test = 0, and
+-- forgetting once quietly gives a wrong number. Read live_spins or test_spins
+-- by name instead; only record_spin() should touch the spins table.
 
 CREATE VIEW IF NOT EXISTS live_spins AS
     SELECT * FROM spins WHERE is_test = 0;
