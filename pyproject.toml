@@ -35,4 +35,6 @@ strict = true
 files = [
     "src/slotmachine/money.py",
     "src/slotmachine/storage.py",
+    "src/slotmachine/rng.py",
+    "src/slotmachine/audit.py",
 ]
