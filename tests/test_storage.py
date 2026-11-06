@@ -144,3 +144,127 @@ def test_list_games_respects_enabled(conn: sqlite3.Connection) -> None:
         storage.upsert_game(conn, "b", "Game B", "{}", enabled=False)
     assert [g["id"] for g in storage.list_games(conn)] == ["a"]
     assert [g["id"] for g in storage.list_games(conn, enabled_only=False)] == ["a", "b"]
+
+
+# ---------------------------------------------------------------------------
+# Append-only enforcement
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def one_spin(conn: sqlite3.Connection, player: int) -> int:
+    with storage.transaction(conn):
+        storage.upsert_game(conn, "g", "Game", "{}")
+        return storage.record_spin(
+            conn,
+            session_id=None,
+            user_id=player,
+            game_id="g",
+            bet=Money(100),
+            seed=b"\x00" * 32,
+            stops_json="[1,2,3]",
+            payout=Money(500),
+        )
+
+
+def test_spin_cannot_be_modified(conn: sqlite3.Connection, one_spin: int) -> None:
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        conn.execute("UPDATE spins SET payout_cents = 999999 WHERE id = ?", (one_spin,))
+
+
+def test_spin_cannot_be_hidden_by_flipping_is_test(
+    conn: sqlite3.Connection, one_spin: int
+) -> None:
+    """The backdoor this trigger exists to stop.
+
+    Marking a real spin as a test spin removes it from every diagnostic, every
+    RTP figure and every player statistic, while leaving the money it moved in
+    place. No deletion required -- one UPDATE would do it.
+    """
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        conn.execute("UPDATE spins SET is_test = 1 WHERE id = ?", (one_spin,))
+    assert len(list(conn.execute("SELECT * FROM live_spins"))) == 1
+
+
+def test_spin_cannot_be_deleted(conn: sqlite3.Connection, one_spin: int) -> None:
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        conn.execute("DELETE FROM spins WHERE id = ?", (one_spin,))
+
+
+def test_audit_log_is_append_only(conn: sqlite3.Connection) -> None:
+    with storage.transaction(conn):
+        conn.execute(
+            "INSERT INTO audit_log (ts, actor, action, detail, prev_hash, hash)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (storage.utc_now(), "alice", "test.event", "", "0" * 64, "a" * 64),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        conn.execute("UPDATE audit_log SET detail = 'nothing happened' WHERE id = 1")
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        conn.execute("DELETE FROM audit_log WHERE id = 1")
+
+
+def test_views_partition_spins(conn: sqlite3.Connection, player: int) -> None:
+    with storage.transaction(conn):
+        storage.upsert_game(conn, "g", "Game", "{}")
+        commissioner = storage.create_user(conn, "reg", "h", "commissioner")
+        for uid, is_test in ((player, False), (player, False), (commissioner, True)):
+            storage.record_spin(
+                conn,
+                session_id=None,
+                user_id=uid,
+                game_id="g",
+                bet=Money(100),
+                seed=b"\x00" * 32,
+                stops_json="[]",
+                payout=Money(0),
+                is_test=is_test,
+            )
+    assert len(list(conn.execute("SELECT * FROM live_spins"))) == 2
+    assert len(list(conn.execute("SELECT * FROM test_spins"))) == 1
+    assert len(list(conn.execute("SELECT * FROM spins"))) == 3
+
+
+def test_player_spin_cannot_be_born_as_a_test_spin(
+    conn: sqlite3.Connection, player: int
+) -> None:
+    """The other half of the is_test problem.
+
+    Immutability stops the flag being changed later. This stops it being set
+    at insert time, which hides the spin just as well and is a one-line change
+    at any call site. A backdoor could even make it conditional, so that only
+    large spins vanish from the reports.
+    """
+    with pytest.raises(sqlite3.IntegrityError, match="is_test must match the actor"):
+        with storage.transaction(conn):
+            storage.upsert_game(conn, "g", "Game", "{}")
+            storage.record_spin(
+                conn,
+                session_id=None,
+                user_id=player,
+                game_id="g",
+                bet=Money(500_00),
+                seed=b"\x00" * 32,
+                stops_json="[]",
+                payout=Money(0),
+                is_test=True,
+            )
+
+
+def test_commissioner_spin_cannot_masquerade_as_live(conn: sqlite3.Connection) -> None:
+    """The inverse: test spins must not be able to pollute real statistics."""
+    with pytest.raises(sqlite3.IntegrityError, match="is_test must match the actor"):
+        with storage.transaction(conn):
+            uid = storage.create_user(conn, "reg", "h", "commissioner")
+            storage.upsert_game(conn, "g", "Game", "{}")
+            storage.record_spin(
+                conn,
+                session_id=None,
+                user_id=uid,
+                game_id="g",
+                bet=Money(100),
+                seed=b"\x00" * 32,
+                stops_json="[]",
+                payout=Money(0),
+                is_test=False,
+            )

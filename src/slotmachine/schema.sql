@@ -103,3 +103,91 @@ CREATE INDEX IF NOT EXISTS idx_spins_session ON spins(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ts      ON audit_log(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_actor   ON audit_log(actor);
 CREATE INDEX IF NOT EXISTS idx_sessions_open ON sessions(user_id, ended_at);
+
+
+-- ---------------------------------------------------------------------------
+-- Append-only enforcement for spins and the audit log
+-- ---------------------------------------------------------------------------
+--
+-- A spin is a historical fact. Once written it must never change, and it must
+-- never disappear. Enforcing that in the database rather than by convention
+-- closes a specific attack:
+--
+--   Without these triggers, hiding a fraudulent spin does not require deleting
+--   it. Setting is_test = 1 is enough -- the spin keeps its money movement but
+--   vanishes from every diagnostic, every RTP figure and every player
+--   statistic, because all of those filter test spins out. That is a one-word
+--   backdoor. These triggers make it fail loudly instead.
+--
+-- The same reasoning applies to audit_log, where it matters even more: the
+-- hash chain detects tampering after the fact, and these triggers prevent a
+-- whole class of it happening at all. Defence in depth -- the chain is the
+-- detector, the triggers are the lock.
+--
+-- (OWASP A08 Software and Data Integrity Failures; CWE-mapping notes in
+-- docs/OWASP.md.)
+
+CREATE TRIGGER IF NOT EXISTS spins_are_immutable
+BEFORE UPDATE ON spins
+BEGIN
+    SELECT RAISE(ABORT, 'spins are append-only: a recorded spin cannot be modified');
+END;
+
+CREATE TRIGGER IF NOT EXISTS spins_cannot_be_deleted
+BEFORE DELETE ON spins
+BEGIN
+    SELECT RAISE(ABORT, 'spins are append-only: a recorded spin cannot be deleted');
+END;
+
+-- Immutability is only half the problem. These triggers stop is_test being
+-- CHANGED after the fact; they do nothing about it being set to 1 when the row
+-- is first written, which hides a spin just as effectively and is a one-line
+-- change at any call site. Worse, it can be made conditional
+-- (is_test = bet > $1000) so only the profitable spins disappear.
+--
+-- So the flag is not something the application is trusted to assert. A spin is
+-- a test spin if and only if a commissioner made it, and that is checkable
+-- here against the users table. Application code can now pass whatever it
+-- likes; a lie is rejected at the point of insert.
+
+CREATE TRIGGER IF NOT EXISTS spins_test_flag_must_match_role
+BEFORE INSERT ON spins
+WHEN NEW.is_test <> (SELECT role = 'commissioner' FROM users WHERE id = NEW.user_id)
+BEGIN
+    SELECT RAISE(
+        ABORT,
+        'is_test must match the actor: commissioners record test spins, everyone else records live spins'
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS audit_log_is_immutable
+BEFORE UPDATE ON audit_log
+BEGIN
+    SELECT RAISE(ABORT, 'audit_log is append-only: an entry cannot be modified');
+END;
+
+CREATE TRIGGER IF NOT EXISTS audit_log_cannot_be_deleted
+BEFORE DELETE ON audit_log
+BEGIN
+    SELECT RAISE(ABORT, 'audit_log is append-only: an entry cannot be deleted');
+END;
+
+
+-- ---------------------------------------------------------------------------
+-- Views: make the safe query the easy one
+-- ---------------------------------------------------------------------------
+--
+-- Commissioner test spins share the spins table so that the regulator is
+-- exercising the real engine rather than a copy that could drift from it. The
+-- cost is that every accounting and player-facing query must filter them out,
+-- and forgetting once silently corrupts a number nobody is checking.
+--
+-- These views remove the need to remember. Application code reads live_spins
+-- or test_spins by name; nothing outside storage.record_spin() should mention
+-- the spins table directly, and a test in Layer 6 (#7) enforces that.
+
+CREATE VIEW IF NOT EXISTS live_spins AS
+    SELECT * FROM spins WHERE is_test = 0;
+
+CREATE VIEW IF NOT EXISTS test_spins AS
+    SELECT * FROM spins WHERE is_test = 1;
