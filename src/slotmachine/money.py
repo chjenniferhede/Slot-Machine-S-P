@@ -90,13 +90,17 @@ class Money:
         if match is None:
             raise MoneyError(f"{text.strip()!r} is not a valid amount")
 
+        # "1,234" -> "1234"
         whole = match.group("whole").replace(",", "")
-        frac = (match.group("frac") or "").ljust(2, "0")
 
-        try:
-            cents = int(whole) * 100 + int(frac)
-        except ValueError:  # pragma: no cover - regex already guarantees digits
-            raise MoneyError(f"{text.strip()!r} is not a valid amount") from None
+        # ".5" means 50 cents, ".50" also means 50 cents, no dot means 0 cents.
+        frac = match.group("frac")
+        if frac is None:
+            frac = "00"
+        elif len(frac) == 1:
+            frac = frac + "0"
+
+        cents = int(whole) * 100 + int(frac)
 
         if cents > MAX_CENTS:
             raise MoneyError("amount is too large")
@@ -187,8 +191,14 @@ class Money:
 
     def __str__(self) -> str:
         """Format as '$12.50'. Always two decimal places."""
-        sign = "-" if self._cents < 0 else ""
-        whole, frac = divmod(abs(self._cents), 100)
+        if self._cents < 0:
+            sign = "-"
+        else:
+            sign = ""
+
+        whole = abs(self._cents) // 100
+        frac = abs(self._cents) % 100
+
         return f"{sign}${whole:,}.{frac:02d}"
 
     def __repr__(self) -> str:

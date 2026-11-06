@@ -30,9 +30,11 @@ def derive_stops(seed: bytes, ctx: str, strip_lens: list[int]) -> list[int]:
     """
     if len(seed) != SEED_BYTES:
         raise ValueError(f"seed must be {SEED_BYTES} bytes, got {len(seed)}")
-    return [
-        _uniform_below(seed, f"{ctx}|reel{i}", n) for i, n in enumerate(strip_lens)
-    ]
+    stops = []
+    for reel_number, strip_length in enumerate(strip_lens):
+        label = ctx + "|reel" + str(reel_number)
+        stops.append(_uniform_below(seed, label, strip_length))
+    return stops
 
 
 def _uniform_below(seed: bytes, label: str, n: int) -> int:
@@ -46,10 +48,15 @@ def _uniform_below(seed: bytes, label: str, n: int) -> int:
         raise ValueError("strip length must be positive")
 
     limit = (2**32 // n) * n  # biggest multiple of n that fits in 32 bits
+
     counter = 0
     while True:
-        digest = hmac.new(seed, f"{label}|{counter}".encode(), hashlib.sha256).digest()
-        value = int.from_bytes(digest[:4], "big")
+        message = label + "|" + str(counter)
+        digest = hmac.new(seed, message.encode(), hashlib.sha256).digest()
+        first_four_bytes = digest[:4]
+        value = int.from_bytes(first_four_bytes, "big")
+
         if value < limit:
             return value % n
-        counter += 1
+
+        counter = counter + 1

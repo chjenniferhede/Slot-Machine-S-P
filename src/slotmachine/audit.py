@@ -68,7 +68,12 @@ def _entry_hash(prev_hash: str, ts: str, actor: str, action: str, detail: str) -
     ("ab", "c") and ("a", "bc") both join into "abc" and hash the same, so two
     different entries could share a hash.
     """
-    payload = "".join(f"{len(p)}:{p}" for p in (prev_hash, ts, actor, action, detail))
+    fields = [prev_hash, ts, actor, action, detail]
+
+    payload = ""
+    for field in fields:
+        payload = payload + str(len(field)) + ":" + field
+
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -86,7 +91,10 @@ def write(
 
     ts = storage.utc_now()
     row = conn.execute("SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
-    prev = row["hash"] if row is not None else GENESIS_HASH
+    if row is None:
+        prev = GENESIS_HASH  # this is the first entry
+    else:
+        prev = row["hash"]
     conn.execute(
         "INSERT INTO audit_log (ts, actor, action, detail, prev_hash, hash)"
         " VALUES (?, ?, ?, ?, ?, ?)",
@@ -152,13 +160,14 @@ def read(
         clauses.append("ts <= ?")
         params.append(until)
 
-    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    params.extend((limit, offset))
-    # The WHERE text is built only from the fixed strings above. Every value
-    # the caller passed is bound with ?, so none of it becomes SQL.
-    return list(
-        conn.execute(
-            f"SELECT * FROM audit_log{where} ORDER BY id DESC LIMIT ? OFFSET ?",
-            tuple(params),
-        )
-    )
+    # Only the fixed strings above go into the query text. Every value the
+    # caller passed is bound with ?, so none of it becomes SQL.
+    query = "SELECT * FROM audit_log"
+    if clauses:
+        query = query + " WHERE " + " AND ".join(clauses)
+    query = query + " ORDER BY id DESC LIMIT ? OFFSET ?"
+
+    params.append(limit)
+    params.append(offset)
+
+    return list(conn.execute(query, tuple(params)))
