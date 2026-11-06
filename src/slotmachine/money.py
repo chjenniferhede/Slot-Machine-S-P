@@ -1,8 +1,6 @@
 """Money, counted in whole cents.
 
-Every amount in this system is an integer number of cents. Not float, because
-0.1 + 0.2 gives 0.30000000000000004 and that error adds up into real money.
-Not Decimal, because it allows half a cent.
+Every amount in this system is an integer number of cents. 
 """
 
 from __future__ import annotations
@@ -48,8 +46,7 @@ class Money:
     _cents: int
 
     def __init__(self, cents: int) -> None:
-        # A bool counts as an int in Python, so Money(True) would quietly
-        # become one cent.
+        # Check that the input is a valid integer.
         if isinstance(cents, bool) or not isinstance(cents, int):
             raise MoneyError(f"amount must be a whole number of cents, got {cents!r}")
         object.__setattr__(self, "_cents", _checked(cents))
@@ -135,8 +132,7 @@ class Money:
     def percent(self, percentage: int) -> Money:
         """A whole percentage of this amount, rounded down to the cent.
 
-        Rounded down on purpose: any leftover stays with the house rather
-        than being invented out of nothing.
+        Rounded down on purpose: any leftover stays with the house.
         """
         if isinstance(percentage, bool) or not isinstance(percentage, int):
             raise MoneyError("percentages must be whole numbers")
