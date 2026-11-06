@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Generator
 
 import pytest
 
@@ -12,7 +12,7 @@ from slotmachine.money import Money
 
 
 @pytest.fixture()
-def conn(tmp_path) -> Iterator[sqlite3.Connection]:
+def conn(tmp_path) -> Generator[sqlite3.Connection, None, None]:
     """A fresh, initialised database per test.
 
     A real file rather than ':memory:' so that WAL mode and the file-backed

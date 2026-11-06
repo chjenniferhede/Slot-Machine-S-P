@@ -1,14 +1,13 @@
 """Saving and loading data with SQLite.
 
-Two rules hold everywhere: every query uses ``?`` placeholders for values,
-never string joining, and anything that moves money runs inside
-``transaction()``.
+Every query uses ``?`` placeholders for values, never string joining, 
+and anything that moves money runs inside ``transaction()``.
 """
 
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from importlib import resources
@@ -50,7 +49,7 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 @contextmanager
-def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+def transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection, None, None]:
     """Run a block of work so it either all happens or none of it does.
 
     Catches BaseException, not Exception, so that Ctrl-C mid-spin rolls back
