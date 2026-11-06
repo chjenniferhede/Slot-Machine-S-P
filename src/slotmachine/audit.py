@@ -1,13 +1,9 @@
 """Audit log that cannot be quietly edited.
 
-Records security-relevant events: logins, money moving, spins, games being
-turned on and off. Every entry also stores the hash of the entry before it, so
-the entries form a chain. Editing an old entry changes its hash and breaks
-every link after it, which ``verify_chain`` will find and report.
-
-It cannot catch deletion of the newest entries, because nothing is left after
-them to disagree. The database separately refuses UPDATE and DELETE on this
-table, so tampering has to go around the program entirely.
+Records logins, money moving, spins and games being turned on and off. Each
+entry stores the hash of the entry before it, so editing an old one breaks
+every link after it and ``verify_chain`` finds it. Deleting the newest
+entries is not detectable.
 """
 
 from __future__ import annotations
@@ -23,11 +19,7 @@ GENESIS_HASH: Final[str] = "0" * 64
 
 
 class Action:
-    """The names of the events we log.
-
-    Kept in one place so two modules cannot spell the same event differently,
-    which would make the log impossible to filter or count.
-    """
+    """Event names, in one place so two modules cannot spell one differently."""
 
     USER_REGISTER: Final[str] = "user.register"
     LOGIN_SUCCESS: Final[str] = "auth.login.success"
@@ -49,18 +41,7 @@ class Action:
 
 @dataclass(frozen=True)
 class VerifyResult:
-    """What a check of the chain found.
-
-    ok
-        True if the whole chain is intact.
-    entries_checked
-        How many entries were looked at. On failure this is how far the check
-        got before stopping.
-    first_bad_id
-        The id of the first bad entry, or None if the chain is intact.
-    reason
-        Why that entry is bad, or None if the chain is intact.
-    """
+    """What a check of the chain found. The last two are None if it is intact."""
 
     ok: bool
     entries_checked: int
@@ -71,8 +52,7 @@ class VerifyResult:
 def _entry_hash(
     previous_hash: str, timestamp: str, actor: str, action: str, detail: str
 ) -> str:
-    """Return the hash of one entry, as 64 hex characters.
-    """
+    """Return the hash of one entry, as 64 hex characters."""
     fields = [previous_hash, timestamp, actor, action, detail]
 
     payload = ""
@@ -85,12 +65,7 @@ def _entry_hash(
 def write(
     conn: sqlite3.Connection, actor: str, action: str, detail: str = ""
 ) -> None:
-    """Add one entry to the end of the log, stamped with the current UTC time.
-
-    ``actor`` is the username responsible, ``action`` is one of the names on
-    :class:`Action`, and ``detail`` is free text describing what happened,
-    such as an amount or a game name.
-    """
+    """Add one entry to the end of the log, stamped with the current UTC time."""
     from slotmachine import storage  # imported here to avoid a circular import
 
     timestamp = storage.utc_now()
@@ -118,20 +93,7 @@ def write(
 
 
 def verify_chain(conn: sqlite3.Connection) -> VerifyResult:
-    """Check every entry in order and stop at the first problem.
-
-    Returns a :class:`VerifyResult`. If the chain is intact, ``ok`` is True
-    and ``entries_checked`` is the number of entries. Otherwise ``ok`` is
-    False and ``reason`` is one of:
-
-    ``id gap``
-        An id is missing, so an entry was deleted.
-    ``broken link``
-        This entry does not point at the one before it, so entries were
-        deleted or reordered.
-    ``hash mismatch``
-        This entry's own fields were edited after it was written.
-    """
+    """Check every entry in order and stop at the first problem found."""
     expected_previous_hash = GENESIS_HASH
     expected_id = 1
     checked = 0
@@ -167,16 +129,7 @@ def read(
     limit: int = 100,
     offset: int = 0,
 ) -> list[sqlite3.Row]:
-    """Return entries, newest first.
-
-    Each filter that is given narrows the result, and filters left as None are
-    ignored. ``actor`` and ``action`` must match exactly. ``since`` and
-    ``until`` are UTC timestamps in the same format as the stored ones and are
-    both inclusive.
-
-    ``limit`` caps how many entries come back and ``offset`` skips that many
-    first, so pages of 100 are read with offset 0, 100, 200 and so on.
-    """
+    """Return entries, newest first. Filters left as None are ignored."""
     clauses: list[str] = []
     params: list[object] = []
 
