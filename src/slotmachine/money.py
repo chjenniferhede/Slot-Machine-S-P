@@ -1,15 +1,8 @@
 """Money, counted in whole cents.
 
-Every amount in this system is an integer number of cents.
-
-Not float, because 0.1 + 0.2 gives 0.30000000000000004. Add up enough payouts
-and that error becomes real money.
-
-Not Decimal, because it allows half a cent, and no amount here should ever be
-smaller than one cent.
-
-Python integers never overflow, but the database columns they are saved into
-hold 64-bit numbers, so the range is checked here instead of failing later.
+Every amount in this system is an integer number of cents. Not float, because
+0.1 + 0.2 gives 0.30000000000000004 and that error adds up into real money.
+Not Decimal, because it allows half a cent.
 """
 
 from __future__ import annotations
@@ -17,23 +10,20 @@ from __future__ import annotations
 import re
 from typing import Final
 
-# SQLite INTEGER is a signed 64-bit value.
+# The biggest and smallest whole numbers a database INTEGER column can hold.
 MAX_CENTS: Final[int] = 2**63 - 1
 MIN_CENTS: Final[int] = -(2**63)
 
-# Accepts: "12", "12.5", "12.50", "$12.50", "1,234.56", " 12.50 "
-# Rejects: "12.567" (sub-cent), "1e5", "0x10", "12.50.50", "" and anything else.
-#
-# Note re.ASCII and the explicit [0-9]. Python's \d also matches digits from
-# other writing systems, and int() converts them, so "\u0665" would be read as
-# $5.00 while looking like nothing recognisable in a log. Digits 0-9 only.
+# Accepts "12", "12.5", "12.50", "$12.50", "1,234.56". Digits 0-9 only: plain
+# \d would also match digits from other writing systems, so "٥" would be
+# read as $5.00 while looking like nothing recognisable in a log.
 _AMOUNT_RE: Final[re.Pattern[str]] = re.compile(
     r"""
-    ^[ \t]*                   # leading space
-    \$?                       # optional dollar sign
+    ^[ \t]*
+    \$?                                          # optional dollar sign
     [ \t]*
     (?P<whole>[0-9]{1,3}(?:,[0-9]{3})*|[0-9]+)   # 1234 or 1,234
-    (?:\.(?P<frac>[0-9]{1,2}))?  # at most two decimals -- 12.567 is rejected
+    (?:\.(?P<frac>[0-9]{1,2}))?                  # at most two decimals
     [ \t]*$
     """,
     re.VERBOSE | re.ASCII,
@@ -47,23 +37,22 @@ class MoneyError(ValueError):
 class Money:
     """An exact amount of money, stored as a whole number of cents.
 
-    Cannot be changed after it is created, so one part of the program cannot
-    alter a balance another part is holding.
+    Cannot be changed once created, so one part of the program cannot alter a
+    balance another part is holding.
     """
 
     __slots__ = ("_cents",)
 
-    # Declared so the type checker can see it. It is set with
-    # object.__setattr__ below, because normal assignment is blocked.
+    # Declared for the type checker. Set with object.__setattr__ below,
+    # because normal assignment is blocked.
     _cents: int
 
     def __init__(self, cents: int) -> None:
+        # A bool counts as an int in Python, so Money(True) would quietly
+        # become one cent.
         if isinstance(cents, bool) or not isinstance(cents, int):
-            # In Python a bool counts as an int, so Money(True) would quietly
-            # become one cent. That is always a mistake.
             raise MoneyError(f"amount must be a whole number of cents, got {cents!r}")
-        _check_range(cents)
-        object.__setattr__(self, "_cents", cents)
+        object.__setattr__(self, "_cents", _checked(cents))
 
     # -- construction ----------------------------------------------------
 
@@ -81,19 +70,18 @@ class Money:
         if not stripped:
             raise MoneyError("enter an amount, for example 12.50")
 
-        # Checked separately so the user gets a useful message. Otherwise
-        # "12.567" would just fail with the generic "not a valid amount".
+        # Checked on its own so the user gets a useful message rather than
+        # the generic "not a valid amount".
         if re.match(r"^[ \t]*\$?[ \t]*[0-9,]+\.[0-9]{3,}[ \t]*$", stripped, re.ASCII):
             raise MoneyError("amounts cannot be smaller than one cent")
 
         match = _AMOUNT_RE.match(stripped)
         if match is None:
-            raise MoneyError(f"{text.strip()!r} is not a valid amount")
+            raise MoneyError(f"{stripped!r} is not a valid amount")
 
-        # "1,234" -> "1234"
-        whole = match.group("whole").replace(",", "")
+        whole = match.group("whole").replace(",", "")  # "1,234" -> "1234"
 
-        # ".5" means 50 cents, ".50" also means 50 cents, no dot means 0 cents.
+        # ".5" and ".50" both mean 50 cents; no dot at all means 0 cents.
         frac = match.group("frac")
         if frac is None:
             frac = "00"
@@ -101,7 +89,6 @@ class Money:
             frac = frac + "0"
 
         cents = int(whole) * 100 + int(frac)
-
         if cents > MAX_CENTS:
             raise MoneyError("amount is too large")
         return cls(cents)
@@ -139,23 +126,23 @@ class Money:
     def times(self, multiplier: int) -> Money:
         """Multiply by a payout multiplier, such as 20 for a 20x win.
 
-        Whole numbers only -- a fraction would create part of a cent.
+        Whole numbers only, so the result cannot be part of a cent.
         """
         if isinstance(multiplier, bool) or not isinstance(multiplier, int):
             raise MoneyError("payout multipliers must be whole numbers")
         return Money(_checked(self._cents * multiplier))
 
-    def percent(self, pct: int) -> Money:
+    def percent(self, percentage: int) -> Money:
         """A whole percentage of this amount, rounded down to the cent.
 
-        Rounding down on purpose: if the split is not exact, the leftover
-        stays with the house rather than being invented out of nothing.
+        Rounded down on purpose: any leftover stays with the house rather
+        than being invented out of nothing.
         """
-        if isinstance(pct, bool) or not isinstance(pct, int):
+        if isinstance(percentage, bool) or not isinstance(percentage, int):
             raise MoneyError("percentages must be whole numbers")
-        if not 0 <= pct <= 100:
+        if not 0 <= percentage <= 100:
             raise MoneyError("percentage must be between 0 and 100")
-        return Money(self._cents * pct // 100)
+        return Money(self._cents * percentage // 100)
 
     # -- comparison ------------------------------------------------------
 
@@ -213,11 +200,8 @@ class Money:
         raise AttributeError("Money is immutable")
 
 
-def _check_range(cents: int) -> None:
+def _checked(cents: int) -> int:
+    """Return cents, or raise if it will not fit in a database INTEGER."""
     if cents > MAX_CENTS or cents < MIN_CENTS:
         raise MoneyError("amount is outside the representable range")
-
-
-def _checked(cents: int) -> int:
-    _check_range(cents)
     return cents
