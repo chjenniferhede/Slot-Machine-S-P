@@ -1,0 +1,285 @@
+{
+  "id": "five_line_deluxe",
+  "name": "Five Line Deluxe",
+  "symbols": [
+    "CHERRY",
+    "PLUM",
+    "BELL",
+    "BAR",
+    "STAR",
+    "DIAMOND"
+  ],
+  "reels": [
+    [
+      "CHERRY",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "STAR",
+      "CHERRY",
+      "DIAMOND",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "CHERRY",
+      "PLUM",
+      "STAR",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "DIAMOND",
+      "STAR",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY"
+    ],
+    [
+      "CHERRY",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "STAR",
+      "CHERRY",
+      "DIAMOND",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "CHERRY",
+      "PLUM",
+      "STAR",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "DIAMOND",
+      "STAR",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY"
+    ],
+    [
+      "CHERRY",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "STAR",
+      "CHERRY",
+      "DIAMOND",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "CHERRY",
+      "PLUM",
+      "STAR",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "DIAMOND",
+      "STAR",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY"
+    ],
+    [
+      "CHERRY",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "STAR",
+      "CHERRY",
+      "DIAMOND",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "CHERRY",
+      "PLUM",
+      "STAR",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "DIAMOND",
+      "STAR",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY"
+    ],
+    [
+      "CHERRY",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "STAR",
+      "CHERRY",
+      "DIAMOND",
+      "PLUM",
+      "BELL",
+      "BAR",
+      "CHERRY",
+      "PLUM",
+      "STAR",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "DIAMOND",
+      "STAR",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY"
+    ]
+  ],
+  "rows": 3,
+  "paylines": [
+    [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    [
+      0,
+      1,
+      2,
+      1,
+      0
+    ],
+    [
+      2,
+      1,
+      0,
+      1,
+      2
+    ]
+  ],
+  "paytable": [
+    {
+      "symbol": "CHERRY",
+      "count": 3,
+      "multiplier": 1
+    },
+    {
+      "symbol": "CHERRY",
+      "count": 4,
+      "multiplier": 5
+    },
+    {
+      "symbol": "CHERRY",
+      "count": 5,
+      "multiplier": 25
+    },
+    {
+      "symbol": "PLUM",
+      "count": 3,
+      "multiplier": 2
+    },
+    {
+      "symbol": "PLUM",
+      "count": 4,
+      "multiplier": 8
+    },
+    {
+      "symbol": "PLUM",
+      "count": 5,
+      "multiplier": 40
+    },
+    {
+      "symbol": "BELL",
+      "count": 3,
+      "multiplier": 2
+    },
+    {
+      "symbol": "BELL",
+      "count": 4,
+      "multiplier": 12
+    },
+    {
+      "symbol": "BELL",
+      "count": 5,
+      "multiplier": 60
+    },
+    {
+      "symbol": "BAR",
+      "count": 3,
+      "multiplier": 3
+    },
+    {
+      "symbol": "BAR",
+      "count": 4,
+      "multiplier": 20
+    },
+    {
+      "symbol": "BAR",
+      "count": 5,
+      "multiplier": 100
+    },
+    {
+      "symbol": "STAR",
+      "count": 3,
+      "multiplier": 6
+    },
+    {
+      "symbol": "STAR",
+      "count": 4,
+      "multiplier": 30
+    },
+    {
+      "symbol": "STAR",
+      "count": 5,
+      "multiplier": 150
+    },
+    {
+      "symbol": "DIAMOND",
+      "count": 3,
+      "multiplier": 12
+    },
+    {
+      "symbol": "DIAMOND",
+      "count": 4,
+      "multiplier": 60
+    },
+    {
+      "symbol": "DIAMOND",
+      "count": 5,
+      "multiplier": 300
+    }
+  ],
+  "bet_tiers": [
+    100,
+    500,
+    2500
+  ],
+  "holds": {
+    "enabled": false,
+    "max_consecutive": 0,
+    "max_reels_held": 0,
+    "cost_percent": 100
+  }
+}

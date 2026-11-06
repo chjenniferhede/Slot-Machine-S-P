@@ -1,0 +1,171 @@
+{
+  "id": "classic_sevens",
+  "name": "Classic Sevens",
+  "symbols": [
+    "CHERRY",
+    "PLUM",
+    "BELL",
+    "BAR",
+    "SEVEN"
+  ],
+  "reels": [
+    [
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM"
+    ],
+    [
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM"
+    ],
+    [
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM",
+      "SEVEN",
+      "CHERRY",
+      "BELL",
+      "BAR",
+      "PLUM"
+    ]
+  ],
+  "rows": 1,
+  "paylines": [
+    [
+      0,
+      0,
+      0
+    ]
+  ],
+  "paytable": [
+    {
+      "symbol": "SEVEN",
+      "count": 3,
+      "multiplier": 100
+    },
+    {
+      "symbol": "BAR",
+      "count": 3,
+      "multiplier": 13
+    },
+    {
+      "symbol": "BELL",
+      "count": 3,
+      "multiplier": 7
+    },
+    {
+      "symbol": "PLUM",
+      "count": 3,
+      "multiplier": 3
+    },
+    {
+      "symbol": "CHERRY",
+      "count": 3,
+      "multiplier": 2
+    },
+    {
+      "symbol": "CHERRY",
+      "count": 2,
+      "multiplier": 1
+    },
+    {
+      "symbol": "CHERRY",
+      "count": 1,
+      "multiplier": 1
+    }
+  ],
+  "bet_tiers": [
+    25,
+    100,
+    500
+  ],
+  "holds": {
+    "enabled": true,
+    "max_consecutive": 1,
+    "max_reels_held": 1,
+    "cost_percent": 100
+  }
+}
