@@ -39,8 +39,10 @@ class HoldPolicy:
     two matching reels to chase the third is worth far more than keeping one,
     so allowing it forces the whole paytable down.
 
-    ``cost_percent`` is a percentage of the original bet, so 100 means a
-    re-spin costs a full bet.
+    ``cost_percent`` is a percentage of the original bet, so 200 means a
+    re-spin costs twice the bet. Charging more than one bet is what lets the
+    base paytable stay generous: a re-spin is only worth taking when the held
+    reel is good enough to beat the price.
     """
 
     enabled: bool
@@ -282,9 +284,9 @@ def _load_holds(raw: dict[str, Any]) -> HoldPolicy:
     if (
         not isinstance(cost_percent, int)
         or isinstance(cost_percent, bool)
-        or not 1 <= cost_percent <= 100
+        or not 1 <= cost_percent <= 500
     ):
-        raise SpecError("holds.cost_percent must be between 1 and 100")
+        raise SpecError("holds.cost_percent must be between 1 and 500")
 
     return HoldPolicy(
         enabled=enabled,

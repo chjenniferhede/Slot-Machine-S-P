@@ -89,12 +89,20 @@ def test_shipped_game_is_profitable(spec) -> None:
 
 @pytest.mark.parametrize("spec", load_shipped_specs(), ids=lambda s: s.id)
 def test_shipped_game_returns_a_sensible_share(spec) -> None:
-    """The figure a player actually experiences should be 90-96%."""
+    """Both figures must look like a real machine, not just the best one.
+
+    A player who never uses holds should get a normal return too. Checking
+    only perfect play would hide a game that quietly punishes casual players,
+    which is what happened when a re-spin cost a single bet: perfect play
+    returned 94% while never holding returned 66%.
+    """
     base, _ = base_rtp(spec)
-    headline = optimal_hold_rtp(spec)
-    if headline is None:
-        headline = base
-    assert 0.90 <= headline <= 0.96
+    assert 0.90 <= base <= 0.96, "a player who never holds is treated badly"
+
+    best_play = optimal_hold_rtp(spec)
+    if best_play is not None:
+        assert 0.90 <= best_play <= 0.97
+        assert best_play - base <= 0.08, "the skill gap is too wide"
 
 
 def test_holds_are_worth_having() -> None:

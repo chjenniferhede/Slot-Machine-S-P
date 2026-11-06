@@ -124,22 +124,22 @@
     {
       "symbol": "SEVEN",
       "count": 3,
-      "multiplier": 100
+      "multiplier": 120
     },
     {
       "symbol": "BAR",
       "count": 3,
-      "multiplier": 13
+      "multiplier": 25
     },
     {
       "symbol": "BELL",
       "count": 3,
-      "multiplier": 7
+      "multiplier": 12
     },
     {
       "symbol": "PLUM",
       "count": 3,
-      "multiplier": 3
+      "multiplier": 6
     },
     {
       "symbol": "CHERRY",
@@ -166,6 +166,6 @@
     "enabled": true,
     "max_consecutive": 1,
     "max_reels_held": 1,
-    "cost_percent": 100
+    "cost_percent": 200
   }
 }
