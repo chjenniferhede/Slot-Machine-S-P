@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slotmachine"
+version = "0.1.0"
+description = "A secure, auditable slot machine for Big Casino"
+requires-python = ">=3.11"
+dependencies = [
+    "argon2-cffi==23.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.3",
+    "mypy==1.11.2",
+]
+
+[project.scripts]
+slotmachine = "slotmachine.__main__:main"
+slotmachine-rtpcalc = "slotmachine.tools.rtpcalc:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: long-running soak and convergence tests (deselect with '-m \"not slow\"')",
+]
+
+[tool.mypy]
+strict = true
+files = [
+    "src/slotmachine/money.py",
+    "src/slotmachine/storage.py",
+]
