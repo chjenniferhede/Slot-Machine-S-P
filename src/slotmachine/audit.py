@@ -1,20 +1,13 @@
 """Audit log that cannot be quietly edited.
 
-Every entry stores the hash of the entry before it, so the entries form a
-chain:
+Records security-relevant events: logins, money moving, spins, games being
+turned on and off. Every entry also stores the hash of the entry before it, so
+the entries form a chain. Editing an old entry changes its hash and breaks
+every link after it, which ``verify_chain`` will find and report.
 
-    entry 1:  prev_hash = 000...0
-    entry 2:  prev_hash = hash of entry 1
-    entry 3:  prev_hash = hash of entry 2
-
-Change an old entry and its hash changes too, which breaks every link after
-it. ``verify_chain`` walks the chain and reports the first break.
-
-What it cannot catch: deleting the newest entries. Nothing comes after them to
-disagree, so what is left still looks fine.
-
-The database also blocks UPDATE and DELETE on this table. That stops tampering
-through the app; the chain catches tampering that goes around it.
+It cannot catch deletion of the newest entries, because nothing is left after
+them to disagree. The database separately refuses UPDATE and DELETE on this
+table, so tampering has to go around the program entirely.
 """
 
 from __future__ import annotations
@@ -25,11 +18,12 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Final
 
+#: Stands in for the previous hash of the very first entry, which has none.
 GENESIS_HASH: Final[str] = "0" * 64
 
 
 class Action:
-    """The names of things we log.
+    """The names of the events we log.
 
     Kept in one place so two modules cannot spell the same event differently,
     which would make the log impossible to filter or count.
@@ -55,20 +49,35 @@ class Action:
 
 @dataclass(frozen=True)
 class VerifyResult:
+    """What a check of the chain found.
+
+    ok
+        True if the whole chain is intact.
+    entries_checked
+        How many entries were looked at. On failure this is how far the check
+        got before stopping.
+    first_bad_id
+        The id of the first bad entry, or None if the chain is intact.
+    reason
+        Why that entry is bad, or None if the chain is intact.
+    """
+
     ok: bool
     entries_checked: int
     first_bad_id: int | None = None
     reason: str | None = None
 
 
-def _entry_hash(prev_hash: str, ts: str, actor: str, action: str, detail: str) -> str:
-    """Hash one entry.
+def _entry_hash(
+    previous_hash: str, timestamp: str, actor: str, action: str, detail: str
+) -> str:
+    """Return the hash of one entry, as 64 hex characters.
 
-    Each field is written as "length:value". Without the lengths, the fields
-    ("ab", "c") and ("a", "bc") both join into "abc" and hash the same, so two
-    different entries could share a hash.
+    The five fields are joined as "length:value" before hashing. Without the
+    lengths, the fields ("ab", "c") and ("a", "bc") would both join into "abc"
+    and hash the same, letting two different entries share a hash.
     """
-    fields = [prev_hash, ts, actor, action, detail]
+    fields = [previous_hash, timestamp, actor, action, detail]
 
     payload = ""
     for field in fields:
@@ -80,46 +89,69 @@ def _entry_hash(prev_hash: str, ts: str, actor: str, action: str, detail: str) -
 def write(
     conn: sqlite3.Connection, actor: str, action: str, detail: str = ""
 ) -> None:
-    """Add one entry to the end of the log.
+    """Add one entry to the end of the log, stamped with the current UTC time.
 
-    Call this inside the caller's transaction, so the action and the record of
-    it are saved or undone together.
+    ``actor`` is the username responsible, ``action`` is one of the names on
+    :class:`Action`, and ``detail`` is free text describing what happened,
+    such as an amount or a game name.
+
+    Call this inside the caller's transaction, so that the action and the
+    record of it are saved together or undone together.
 
     Never put a secret in ``detail`` -- no passwords, card numbers or tokens.
     """
     from slotmachine import storage  # imported here to avoid a circular import
 
-    ts = storage.utc_now()
-    row = conn.execute("SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
-    if row is None:
-        prev = GENESIS_HASH  # this is the first entry
+    timestamp = storage.utc_now()
+
+    last_entry = conn.execute(
+        "SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if last_entry is None:
+        previous_hash = GENESIS_HASH
     else:
-        prev = row["hash"]
+        previous_hash = last_entry["hash"]
+
     conn.execute(
         "INSERT INTO audit_log (ts, actor, action, detail, prev_hash, hash)"
         " VALUES (?, ?, ?, ?, ?, ?)",
-        (ts, actor, action, detail, prev, _entry_hash(prev, ts, actor, action, detail)),
+        (
+            timestamp,
+            actor,
+            action,
+            detail,
+            previous_hash,
+            _entry_hash(previous_hash, timestamp, actor, action, detail),
+        ),
     )
 
 
 def verify_chain(conn: sqlite3.Connection) -> VerifyResult:
-    """Check the whole chain and report the first problem found.
+    """Check every entry in order and stop at the first problem.
 
-    * ``hash mismatch`` -- the row was edited.
-    * ``broken link``   -- this row does not point at the one before it.
-    * ``id gap``        -- an id is missing, so a row was deleted.
+    Returns a :class:`VerifyResult`. If the chain is intact, ``ok`` is True
+    and ``entries_checked`` is the number of entries. Otherwise ``ok`` is
+    False and ``reason`` is one of:
+
+    ``id gap``
+        An id is missing, so an entry was deleted.
+    ``broken link``
+        This entry does not point at the one before it, so entries were
+        deleted or reordered.
+    ``hash mismatch``
+        This entry's own fields were edited after it was written.
     """
-    prev_hash = GENESIS_HASH
+    expected_previous_hash = GENESIS_HASH
     expected_id = 1
     checked = 0
 
     for row in conn.execute("SELECT * FROM audit_log ORDER BY id"):
-        checked += 1
+        checked = checked + 1
 
         if row["id"] != expected_id:
             return VerifyResult(False, checked, int(row["id"]), "id gap")
 
-        if not hmac.compare_digest(row["prev_hash"], prev_hash):
+        if not hmac.compare_digest(row["prev_hash"], expected_previous_hash):
             return VerifyResult(False, checked, int(row["id"]), "broken link")
 
         recomputed = _entry_hash(
@@ -128,8 +160,8 @@ def verify_chain(conn: sqlite3.Connection) -> VerifyResult:
         if not hmac.compare_digest(row["hash"], recomputed):
             return VerifyResult(False, checked, int(row["id"]), "hash mismatch")
 
-        prev_hash = row["hash"]
-        expected_id += 1
+        expected_previous_hash = row["hash"]
+        expected_id = expected_id + 1
 
     return VerifyResult(True, checked)
 
@@ -144,9 +176,19 @@ def read(
     limit: int = 100,
     offset: int = 0,
 ) -> list[sqlite3.Row]:
-    """Read entries, newest first, with optional filters."""
+    """Return entries, newest first.
+
+    Each filter that is given narrows the result, and filters left as None are
+    ignored. ``actor`` and ``action`` must match exactly. ``since`` and
+    ``until`` are UTC timestamps in the same format as the stored ones and are
+    both inclusive.
+
+    ``limit`` caps how many entries come back and ``offset`` skips that many
+    first, so pages of 100 are read with offset 0, 100, 200 and so on.
+    """
     clauses: list[str] = []
     params: list[object] = []
+
     if actor is not None:
         clauses.append("actor = ?")
         params.append(actor)
