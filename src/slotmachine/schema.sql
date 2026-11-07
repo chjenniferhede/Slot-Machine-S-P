@@ -98,6 +98,9 @@ CREATE INDEX IF NOT EXISTS idx_spins_session ON spins(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ts      ON audit_log(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_actor   ON audit_log(actor);
 CREATE INDEX IF NOT EXISTS idx_sessions_open ON sessions(user_id, ended_at);
+-- One open session per user, so credits cannot be spread over several.
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_session_per_user
+    ON sessions(user_id) WHERE ended_at IS NULL;
 
 
 -- Spins and audit entries can only be added, never changed or deleted.

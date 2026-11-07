@@ -296,6 +296,75 @@ def set_game_enabled(conn: sqlite3.Connection, game_id: str, enabled: bool) -> N
 
 
 # ---------------------------------------------------------------------------
+# Game sessions
+# ---------------------------------------------------------------------------
+# A session is one visit to a machine. Like payment methods, it is looked up
+# by its id together with its owner's user_id.
+
+
+def create_session(
+    conn: sqlite3.Connection, user_id: int, game_id: str, credits: Money
+) -> int:
+    """Open a session. The schema allows only one open session per user."""
+    cur = conn.execute(
+        "INSERT INTO sessions (user_id, game_id, credits_cents, started_at) VALUES (?, ?, ?, ?)",
+        (user_id, game_id, credits.cents, utc_now()),
+    )
+    session_id = cur.lastrowid
+    assert session_id is not None
+    return session_id
+
+
+def get_session(conn: sqlite3.Connection, user_id: int, session_id: int) -> sqlite3.Row | None:
+    """One of this user's sessions, open or closed, or None."""
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)
+    ).fetchone()
+    return cast("sqlite3.Row | None", row)
+
+
+def get_open_session(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE user_id = ? AND ended_at IS NULL", (user_id,)
+    ).fetchone()
+    return cast("sqlite3.Row | None", row)
+
+
+def list_open_sessions(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(conn.execute("SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY id"))
+
+
+def adjust_credits(conn: sqlite3.Connection, session_id: int, delta: Money) -> Money:
+    """Change an open session's credits by ``delta`` and return the new credits.
+
+    The schema refuses negative credits, so betting more than is there fails
+    here even if a check in the calling code is missing.
+    """
+    cur = conn.execute(
+        "UPDATE sessions SET credits_cents = credits_cents + ? WHERE id = ? AND ended_at IS NULL",
+        (delta.cents, session_id),
+    )
+    if cur.rowcount != 1:
+        raise StorageError(f"session {session_id} is not open")
+    row = conn.execute("SELECT credits_cents FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return Money(int(row["credits_cents"]))
+
+
+def close_session(conn: sqlite3.Connection, session_id: int) -> None:
+    """Mark a session ended with no credits left in it.
+
+    The caller moves the credits to the account first, in the same
+    transaction. Leaving them here as well would count the money twice.
+    """
+    cur = conn.execute(
+        "UPDATE sessions SET credits_cents = 0, ended_at = ? WHERE id = ? AND ended_at IS NULL",
+        (utc_now(), session_id),
+    )
+    if cur.rowcount != 1:
+        raise StorageError(f"session {session_id} is not open")
+
+
+# ---------------------------------------------------------------------------
 # Spins
 # ---------------------------------------------------------------------------
 
@@ -333,6 +402,26 @@ def record_spin(
     spin_id = cur.lastrowid
     assert spin_id is not None
     return spin_id
+
+
+def recent_spins(conn: sqlite3.Connection, session_id: int, limit: int) -> list[sqlite3.Row]:
+    """A session's latest spins, newest first."""
+    return list(
+        conn.execute(
+            "SELECT * FROM spins WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+            (session_id, limit),
+        )
+    )
+
+
+def session_totals(conn: sqlite3.Connection, session_id: int) -> tuple[int, Money, Money]:
+    """Spins played, total staked and total paid out in one session."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS spins, COALESCE(SUM(bet_cents), 0) AS staked,"
+        " COALESCE(SUM(payout_cents), 0) AS paid FROM spins WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    return int(row["spins"]), Money(int(row["staked"])), Money(int(row["paid"]))
 
 
 class StorageError(Exception):

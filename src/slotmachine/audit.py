@@ -34,6 +34,7 @@ class Action:
     WITHDRAW: Final[str] = "account.withdraw"
     SESSION_BUYIN: Final[str] = "session.buyin"
     SESSION_CASHOUT: Final[str] = "session.cashout"
+    SESSION_RECOVERED: Final[str] = "session.recovered"
     SPIN: Final[str] = "game.spin"
     GAME_ENABLED: Final[str] = "game.enabled"
     GAME_DISABLED: Final[str] = "game.disabled"
