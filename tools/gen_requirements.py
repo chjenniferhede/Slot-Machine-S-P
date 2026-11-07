@@ -39,7 +39,14 @@ DEV: list[tuple[str, str]] = [
     ("pluggy", "1.5.0"),
     ("mypy-extensions", "1.0.0"),
     ("typing-extensions", "4.12.2"),
+    ("colorama", "0.4.6"),
 ]
+
+# Dependencies only some platforms pull in. pytest needs colorama on Windows,
+# and --require-hashes refuses the install there if it is missing.
+MARKERS: dict[str, str] = {
+    "colorama": 'sys_platform == "win32"',
+}
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -61,7 +68,8 @@ def hashes_for(name: str, version: str) -> list[str]:
 def render(pkgs: list[tuple[str, str]]) -> str:
     blocks = []
     for name, version in pkgs:
-        lines = [f"{name}=={version} \\"]
+        marker = f" ; {MARKERS[name]}" if name in MARKERS else ""
+        lines = [f"{name}=={version}{marker} \\"]
         lines += [f"    --hash=sha256:{h} \\" for h in hashes_for(name, version)]
         lines[-1] = lines[-1].rstrip(" \\")
         blocks.append("\n".join(lines))

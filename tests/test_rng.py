@@ -12,6 +12,13 @@ from slotmachine.rng import SEED_BYTES, _uniform_below, derive_stops, secure_see
 SRC = Path(__file__).resolve().parent.parent / "src" / "slotmachine"
 
 
+def source(path: Path) -> str:
+    # Explicit UTF-8: the default follows the machine's locale, which on a
+    # Chinese Windows install is cp936 and cannot read the box-drawing
+    # characters in engine.py.
+    return path.read_text(encoding="utf-8")
+
+
 def test_seed_length_and_type() -> None:
     seed = secure_seed()
     assert isinstance(seed, bytes)
@@ -104,7 +111,7 @@ def test_no_insecure_random_anywhere() -> None:
     offenders = [
         str(path.relative_to(SRC))
         for path in SRC.rglob("*.py")
-        if "import random" in path.read_text() or "from random import" in path.read_text()
+        if "import random" in source(path) or "from random import" in source(path)
     ]
     assert not offenders, f"insecure random imported in: {offenders}"
 
@@ -116,6 +123,6 @@ def test_entropy_drawn_in_one_place() -> None:
         str(path.relative_to(SRC))
         for path in SRC.rglob("*.py")
         if path.name not in allowed
-        and ("secrets" in path.read_text() or "urandom" in path.read_text())
+        and ("secrets" in source(path) or "urandom" in source(path))
     ]
     assert not offenders, f"entropy drawn outside rng.py: {offenders}"
