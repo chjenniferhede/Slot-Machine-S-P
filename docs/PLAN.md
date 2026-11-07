@@ -1,5 +1,9 @@
 # Secure Slot Machine — Phase I Implementation Plan (Python)
 
+> Current delivery status and integration checklist: [PHASE_I_TRACKING.md](PHASE_I_TRACKING.md).
+> This plan records the original design. For hold pricing and restrictions, use the
+> current game JSON and the implementation notes in the tracker.
+
 > **On the language.** The written spec names Golang (PDF §5.2 and §3.1.1 req. 4). We are
 > building in Python per the instructor's verbal guidance that teams assigned Go use Python
 > instead. This is a deliberate team decision, settled — noted here only so the rationale is on
