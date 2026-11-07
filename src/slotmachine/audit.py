@@ -25,7 +25,7 @@ class Action:
     LOGIN_SUCCESS: Final[str] = "auth.login.success"
     LOGIN_FAILURE: Final[str] = "auth.login.failure"
     LOCKOUT: Final[str] = "auth.lockout"
-    PASSWORD_CHANGE: Final[str] = "auth.password_change"
+    PASSWORD_CHANGE: Final[str] = "auth.password_change"  # noqa: credential
     ACCESS_GRANTED: Final[str] = "access.granted"
     ACCESS_DENIED: Final[str] = "access.denied"
     PAYMENT_METHOD_ADDED: Final[str] = "payment.method_added"
