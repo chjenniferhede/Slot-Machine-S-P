@@ -35,7 +35,7 @@ _ph = PasswordHasher(
 )
 MAX_FAILURES = 5
 LOCKOUT_MINS = 15
-LOGIN_FAILURE_MESSAGE = "Invalid username or password"
+LOGIN_FAILURE_MESSAGE = "Invalid username or password"  # noqa: credential (public error message)
 COMMON_PASSWORDS = frozenset({
     "password", "password123", "password1234", "password12345", "password123456",
     "123456789012", "1234567890123", "12345678901234", "qwertyuiop12",

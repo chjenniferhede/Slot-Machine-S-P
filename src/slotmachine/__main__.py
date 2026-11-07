@@ -7,7 +7,7 @@ import getpass
 import sqlite3
 import sys
 
-from slotmachine import __version__, auth, storage
+from slotmachine import __version__, accounts, auth, storage
 
 
 def _change_password(conn: sqlite3.Connection, session: auth.Session) -> None:
@@ -74,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         conn = storage.connect(args.db)
         storage.init_db(conn)
+        accounts.recover_open_sessions(conn)
         password = auth.bootstrap_if_empty(conn)
         print(f"slotmachine {__version__}")
         if password is not None:

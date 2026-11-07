@@ -21,8 +21,9 @@ digits, dots, hyphens, or underscores; uniqueness is case insensitive. Passwords
 accept 12–1024 characters, without composition rules, and reject a small common
 password list. Password entry uses hidden terminal prompts.
 
-After login, users can change their password or log out. The game, payment,
-technician, and commissioner tools are later-layer work, not available commands.
+After login, users can change their password or log out. Payment and account
+APIs and the shared CLI framework are integrated, but game, payment, technician,
+and commissioner menus remain later-layer work, not available commands.
 
 Five consecutive incorrect passwords lock an account for 15 minutes. Unknown,
 incorrect-password, and locked-account logins all display `Invalid username or
@@ -84,3 +85,16 @@ entry point and add introspection tests for those modules when they exist. Layer
 6 owns the full application-wide invariant scans and installation/manual work.
 Staff account provisioning beyond the first technician is not exposed by this
 identity CLI. The audit chain retains its documented tail-truncation limitation.
+
+The payment and account entry points now carry the player role decorator. They
+accept real authenticated sessions and retain their ownership checks. Additional
+integration tests cover anonymous callers, staff, stale/deleted identities and
+the forced password-change gate against every real money API. Their business
+transactions remain separate from the decorator's committed access evidence.
+The shared menu boundary recognizes `AuthError` and `AccessDenied`.
+
+Startup calls `accounts.recover_open_sessions` after applying the schema and
+before showing the identity menu, including with `--init`. It atomically returns
+abandoned credits to their owners and logs recovery. This deployment assumes
+one running application per database; starting another copy would recover an
+active copy's sessions too.

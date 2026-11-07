@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from slotmachine.rng import SEED_BYTES, _uniform_below, derive_stops, secure_seed
+from slotmachine.rng import (
+    SEED_BYTES,
+    _uniform_below,
+    derive_stops,
+    random_token,
+    secure_seed,
+)
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "slotmachine"
 
@@ -96,34 +102,6 @@ def test_uniformity_chi_squared() -> None:
     assert chi_squared < 49.728, f"chi-squared {chi_squared:.2f} suggests a biased draw"
 
 
-def test_no_insecure_random_anywhere() -> None:
-    """``random`` must not be imported anywhere in the package.
-
-    This is the test that stops a predictable generator being substituted --
-    by a Phase II team, or by one of us at 2am.
-    """
-    offenders = [
-        str(path.relative_to(SRC))
-        for path in SRC.rglob("*.py")
-        if "import random" in path.read_text(encoding="utf-8")
-        or "from random import" in path.read_text(encoding="utf-8")
-    ]
-    assert not offenders, f"insecure random imported in: {offenders}"
-
-
-def test_entropy_drawn_only_in_approved_modules() -> None:
-    """Spin entropy lives in rng.py; auth.py also needs bootstrap credentials."""
-    allowed = {"rng.py", "auth.py"}
-    offenders = [
-        str(path.relative_to(SRC))
-        for path in SRC.rglob("*.py")
-        if path.name not in allowed
-        and ("secrets" in path.read_text(encoding="utf-8")
-             or "urandom" in path.read_text(encoding="utf-8"))
-    ]
-    assert not offenders, f"entropy drawn outside rng.py: {offenders}"
-
-
 def test_auth_entropy_is_for_credentials_only() -> None:
     tree = ast.parse((SRC / "auth.py").read_text(encoding="utf-8"))
     calls = [
@@ -135,3 +113,21 @@ def test_auth_entropy_is_for_credentials_only() -> None:
         and node.func.value.id == "secrets"
     ]
     assert calls and set(calls) == {"token_urlsafe"}
+
+
+def test_random_token_shape_and_uniqueness() -> None:
+    tokens = {random_token() for _ in range(1000)}
+    assert len(tokens) == 1000
+    for token in tokens:
+        assert len(token) == 32
+        assert set(token) <= set("0123456789abcdef")
+    assert len(random_token(32)) == 64
+
+
+def test_random_token_refuses_too_little_entropy() -> None:
+    with pytest.raises(ValueError):
+        random_token(8)
+
+
+# The scans that keep ``random`` out of the package and entropy in rng.py
+# are in test_source_invariants.py, with the other whole-package rules.

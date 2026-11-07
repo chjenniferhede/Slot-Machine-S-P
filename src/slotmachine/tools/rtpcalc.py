@@ -343,7 +343,8 @@ def load_shipped_specs() -> list[GameSpec]:
     """Load the games that ship with the system."""
     specs = []
     for filename in SHIPPED_SPECS:
-        text = resources.files("slotmachine.game.specs").joinpath(filename).read_text()
+        spec_file = resources.files("slotmachine.game.specs").joinpath(filename)
+        text = spec_file.read_text(encoding="utf-8")
         specs.append(load_spec(text))
     return specs
 

@@ -54,15 +54,19 @@ def transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection, None,
 
     Catches BaseException, not Exception, so that Ctrl-C mid-spin rolls back
     instead of letting a player cancel a losing bet.
+
+    COMMIT is inside the try. If it fails, or Ctrl-C lands just before it,
+    the transaction is rolled back instead of being left open, holding the
+    write lock, on a connection the menus go on using.
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    else:
         conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
 
 
 def utc_now() -> str:
@@ -170,6 +174,100 @@ def adjust_balance(conn: sqlite3.Connection, user_id: int, delta: Money) -> Mone
     return get_balance(conn, user_id)
 
 
+def roll_over_daily_totals(conn: sqlite3.Connection, user_id: int, today: str) -> None:
+    """Start new daily deposit and withdrawal totals if the UTC date has changed."""
+    conn.execute(
+        "UPDATE accounts SET daily_deposit_cents = 0, daily_withdraw_cents = 0, day_bucket = ?"
+        " WHERE user_id = ? AND day_bucket <> ?",
+        (today, user_id, today),
+    )
+
+
+def record_deposit(conn: sqlite3.Connection, user_id: int, amount: Money) -> Money:
+    """Add a deposit to the balance and to today's deposit total. Returns the new balance."""
+    _require_positive(amount)
+    conn.execute(
+        "UPDATE accounts SET balance_cents = balance_cents + ?,"
+        " daily_deposit_cents = daily_deposit_cents + ? WHERE user_id = ?",
+        (amount.cents, amount.cents, user_id),
+    )
+    return get_balance(conn, user_id)
+
+
+def record_withdrawal(conn: sqlite3.Connection, user_id: int, amount: Money) -> Money:
+    """Take a withdrawal off the balance and add it to today's total. Returns the new balance.
+
+    The schema refuses a negative balance, so an overdraft fails here even if
+    the caller forgot to check.
+    """
+    _require_positive(amount)
+    conn.execute(
+        "UPDATE accounts SET balance_cents = balance_cents - ?,"
+        " daily_withdraw_cents = daily_withdraw_cents + ? WHERE user_id = ?",
+        (amount.cents, amount.cents, user_id),
+    )
+    return get_balance(conn, user_id)
+
+
+def _require_positive(amount: Money) -> None:
+    # A negative deposit is a withdrawal that skips the withdrawal checks.
+    # accounts.py refuses one first; this is the second line.
+    if not amount.is_positive():
+        raise StorageError("a deposit or withdrawal must be a positive amount")
+
+
+# ---------------------------------------------------------------------------
+# Payment methods
+# ---------------------------------------------------------------------------
+# Every lookup takes the owner's user_id as well as the method id. Finding a
+# method by its id alone would let one player use or remove another's card
+# by guessing ids (IDOR, CWE-639).
+
+
+def insert_payment_method(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    token: str,
+    last4: str,
+    brand: str,
+    exp_month: int,
+    exp_year: int,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO payment_methods (user_id, token, last4, brand, exp_month, exp_year, added_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user_id, token, last4, brand, exp_month, exp_year, utc_now()),
+    )
+    method_id = cur.lastrowid
+    assert method_id is not None
+    return method_id
+
+
+def get_payment_method(
+    conn: sqlite3.Connection, user_id: int, method_id: int
+) -> sqlite3.Row | None:
+    """One of this user's methods, or None if they have no method with that id."""
+    row = conn.execute(
+        "SELECT * FROM payment_methods WHERE id = ? AND user_id = ?", (method_id, user_id)
+    ).fetchone()
+    return cast("sqlite3.Row | None", row)
+
+
+def list_payment_methods(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute("SELECT * FROM payment_methods WHERE user_id = ? ORDER BY id", (user_id,))
+    )
+
+
+def delete_payment_method(conn: sqlite3.Connection, user_id: int, method_id: int) -> bool:
+    """Remove one of this user's methods. False if they have no method with that id."""
+    cur = conn.execute(
+        "DELETE FROM payment_methods WHERE id = ? AND user_id = ?", (method_id, user_id)
+    )
+    return cur.rowcount == 1
+
+
 # ---------------------------------------------------------------------------
 # Games
 # ---------------------------------------------------------------------------
@@ -199,6 +297,75 @@ def list_games(conn: sqlite3.Connection, enabled_only: bool = True) -> list[sqli
 
 def set_game_enabled(conn: sqlite3.Connection, game_id: str, enabled: bool) -> None:
     conn.execute("UPDATE games SET enabled = ? WHERE id = ?", (int(enabled), game_id))
+
+
+# ---------------------------------------------------------------------------
+# Game sessions
+# ---------------------------------------------------------------------------
+# A session is one visit to a machine. Like payment methods, it is looked up
+# by its id together with its owner's user_id.
+
+
+def create_session(
+    conn: sqlite3.Connection, user_id: int, game_id: str, credits: Money
+) -> int:
+    """Open a session. The schema allows only one open session per user."""
+    cur = conn.execute(
+        "INSERT INTO sessions (user_id, game_id, credits_cents, started_at) VALUES (?, ?, ?, ?)",
+        (user_id, game_id, credits.cents, utc_now()),
+    )
+    session_id = cur.lastrowid
+    assert session_id is not None
+    return session_id
+
+
+def get_session(conn: sqlite3.Connection, user_id: int, session_id: int) -> sqlite3.Row | None:
+    """One of this user's sessions, open or closed, or None."""
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)
+    ).fetchone()
+    return cast("sqlite3.Row | None", row)
+
+
+def get_open_session(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE user_id = ? AND ended_at IS NULL", (user_id,)
+    ).fetchone()
+    return cast("sqlite3.Row | None", row)
+
+
+def list_open_sessions(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(conn.execute("SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY id"))
+
+
+def adjust_credits(conn: sqlite3.Connection, session_id: int, delta: Money) -> Money:
+    """Change an open session's credits by ``delta`` and return the new credits.
+
+    The schema refuses negative credits, so betting more than is there fails
+    here even if a check in the calling code is missing.
+    """
+    cur = conn.execute(
+        "UPDATE sessions SET credits_cents = credits_cents + ? WHERE id = ? AND ended_at IS NULL",
+        (delta.cents, session_id),
+    )
+    if cur.rowcount != 1:
+        raise StorageError(f"session {session_id} is not open")
+    row = conn.execute("SELECT credits_cents FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return Money(int(row["credits_cents"]))
+
+
+def close_session(conn: sqlite3.Connection, session_id: int) -> None:
+    """Mark a session ended with no credits left in it.
+
+    The caller moves the credits to the account first, in the same
+    transaction. Leaving them here as well would count the money twice.
+    """
+    cur = conn.execute(
+        "UPDATE sessions SET credits_cents = 0, ended_at = ? WHERE id = ? AND ended_at IS NULL",
+        (utc_now(), session_id),
+    )
+    if cur.rowcount != 1:
+        raise StorageError(f"session {session_id} is not open")
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +406,26 @@ def record_spin(
     spin_id = cur.lastrowid
     assert spin_id is not None
     return spin_id
+
+
+def recent_spins(conn: sqlite3.Connection, session_id: int, limit: int) -> list[sqlite3.Row]:
+    """A session's latest spins, newest first."""
+    return list(
+        conn.execute(
+            "SELECT * FROM spins WHERE session_id = ? ORDER BY id DESC LIMIT ?",
+            (session_id, limit),
+        )
+    )
+
+
+def session_totals(conn: sqlite3.Connection, session_id: int) -> tuple[int, Money, Money]:
+    """Spins played, total staked and total paid out in one session."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS spins, COALESCE(SUM(bet_cents), 0) AS staked,"
+        " COALESCE(SUM(payout_cents), 0) AS paid FROM spins WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    return int(row["spins"]), Money(int(row["staked"])), Money(int(row["paid"]))
 
 
 class StorageError(Exception):
