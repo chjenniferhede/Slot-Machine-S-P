@@ -54,15 +54,19 @@ def transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection, None,
 
     Catches BaseException, not Exception, so that Ctrl-C mid-spin rolls back
     instead of letting a player cancel a losing bet.
+
+    COMMIT is inside the try. If it fails, or Ctrl-C lands just before it,
+    the transaction is rolled back instead of being left open, holding the
+    write lock, on a connection the menus go on using.
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    else:
         conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
 
 
 def utc_now() -> str:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -54,6 +56,31 @@ def test_transaction_rollback_on_keyboardinterrupt(conn: sqlite3.Connection) -> 
             storage.create_user(conn, "bob", "h", "player")
             raise KeyboardInterrupt
     assert storage.count_users(conn) == 0
+
+
+def test_transaction_rollback_when_commit_is_interrupted(tmp_path: Path) -> None:
+    """Ctrl-C just before COMMIT must not leave the transaction open.
+
+    It was once in the try's else branch, which its except does not cover,
+    so the connection stayed inside the transaction and kept the write lock.
+    """
+
+    class InterruptedAtCommit(sqlite3.Connection):
+        def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
+            if sql == "COMMIT":
+                raise KeyboardInterrupt
+            return super().execute(sql, parameters)
+
+    conn = sqlite3.connect(tmp_path / "commit.db", isolation_level=None, factory=InterruptedAtCommit)
+    conn.row_factory = sqlite3.Row
+    storage.init_db(conn)
+    with pytest.raises(KeyboardInterrupt):
+        with storage.transaction(conn):
+            storage.create_user(conn, "bob", "h", "player")
+
+    assert not conn.in_transaction
+    assert storage.count_users(conn) == 0
+    conn.close()
 
 
 def test_transaction_commits(conn: sqlite3.Connection) -> None:

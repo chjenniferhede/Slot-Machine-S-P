@@ -26,8 +26,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The slow tests take minutes, so a plain `pytest` leaves them out.
+# `pytest -m slow` runs them; a later -m replaces this one.
+addopts = "-m 'not slow'"
 markers = [
-    "slow: long-running soak and convergence tests (deselect with '-m \"not slow\"')",
+    "slow: long-running soak and convergence tests, left out unless run with -m slow",
 ]
 
 [tool.mypy]
