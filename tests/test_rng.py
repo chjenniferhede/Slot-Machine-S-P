@@ -105,7 +105,8 @@ def test_no_insecure_random_anywhere() -> None:
     offenders = [
         str(path.relative_to(SRC))
         for path in SRC.rglob("*.py")
-        if "import random" in path.read_text() or "from random import" in path.read_text()
+        if "import random" in path.read_text(encoding="utf-8")
+        or "from random import" in path.read_text(encoding="utf-8")
     ]
     assert not offenders, f"insecure random imported in: {offenders}"
 
@@ -117,13 +118,14 @@ def test_entropy_drawn_only_in_approved_modules() -> None:
         str(path.relative_to(SRC))
         for path in SRC.rglob("*.py")
         if path.name not in allowed
-        and ("secrets" in path.read_text() or "urandom" in path.read_text())
+        and ("secrets" in path.read_text(encoding="utf-8")
+             or "urandom" in path.read_text(encoding="utf-8"))
     ]
     assert not offenders, f"entropy drawn outside rng.py: {offenders}"
 
 
 def test_auth_entropy_is_for_credentials_only() -> None:
-    tree = ast.parse((SRC / "auth.py").read_text())
+    tree = ast.parse((SRC / "auth.py").read_text(encoding="utf-8"))
     calls = [
         node.func.attr
         for node in ast.walk(tree)

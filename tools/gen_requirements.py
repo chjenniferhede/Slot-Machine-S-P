@@ -39,6 +39,7 @@ DEV: list[tuple[str, str]] = [
     ("pluggy", "1.5.0"),
     ("mypy-extensions", "1.0.0"),
     ("typing-extensions", "4.12.2"),
+    ("colorama", "0.4.6"),  # Required by pytest on Windows.
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
