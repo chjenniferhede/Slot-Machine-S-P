@@ -171,6 +171,48 @@ def adjust_balance(conn: sqlite3.Connection, user_id: int, delta: Money) -> Mone
 
 
 # ---------------------------------------------------------------------------
+# Payment methods
+# ---------------------------------------------------------------------------
+# Every lookup takes the owner's user_id as well as the method id. Finding a
+# method by its id alone would let one player use or remove another's card
+# by guessing ids (IDOR, CWE-639).
+
+
+def insert_payment_method(
+    conn: sqlite3.Connection,
+    *,
+    user_id: int,
+    token: str,
+    last4: str,
+    brand: str,
+    exp_month: int,
+    exp_year: int,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO payment_methods (user_id, token, last4, brand, exp_month, exp_year, added_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user_id, token, last4, brand, exp_month, exp_year, utc_now()),
+    )
+    method_id = cur.lastrowid
+    assert method_id is not None
+    return method_id
+
+
+def list_payment_methods(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute("SELECT * FROM payment_methods WHERE user_id = ? ORDER BY id", (user_id,))
+    )
+
+
+def delete_payment_method(conn: sqlite3.Connection, user_id: int, method_id: int) -> bool:
+    """Remove one of this user's methods. False if they have no method with that id."""
+    cur = conn.execute(
+        "DELETE FROM payment_methods WHERE id = ? AND user_id = ?", (method_id, user_id)
+    )
+    return cur.rowcount == 1
+
+
+# ---------------------------------------------------------------------------
 # Games
 # ---------------------------------------------------------------------------
 

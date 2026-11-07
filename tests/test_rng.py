@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from slotmachine.rng import SEED_BYTES, _uniform_below, derive_stops, secure_seed
+from slotmachine.rng import (
+    SEED_BYTES,
+    _uniform_below,
+    derive_stops,
+    random_token,
+    secure_seed,
+)
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "slotmachine"
 
@@ -100,6 +106,20 @@ def test_uniformity_chi_squared() -> None:
 
     # Critical value for 23 degrees of freedom at p = 0.001.
     assert chi_squared < 49.728, f"chi-squared {chi_squared:.2f} suggests a biased draw"
+
+
+def test_random_token_shape_and_uniqueness() -> None:
+    tokens = {random_token() for _ in range(1000)}
+    assert len(tokens) == 1000
+    for token in tokens:
+        assert len(token) == 32
+        assert set(token) <= set("0123456789abcdef")
+    assert len(random_token(32)) == 64
+
+
+def test_random_token_refuses_too_little_entropy() -> None:
+    with pytest.raises(ValueError):
+        random_token(8)
 
 
 def test_no_insecure_random_anywhere() -> None:

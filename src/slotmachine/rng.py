@@ -1,6 +1,8 @@
-"""Secure random numbers for spins.
+"""Secure random numbers: spin seeds, and tokens for anything else.
 
-Use ``secrets`` here and nowhere else; never use ``random``.
+Use ``secrets`` here and nowhere else; never use ``random``. Other modules
+that need randomness call a function in this file, so there is one place to
+check.
 
 A spin draws a fresh seed, then turns it into reel positions. The same seed
 always gives the same positions, so a saved seed replays a spin and shows it
@@ -20,6 +22,13 @@ SEED_BYTES: Final[int] = 32
 def secure_seed() -> bytes:
     """A fresh 32-byte seed from the operating system."""
     return secrets.token_bytes(SEED_BYTES)
+
+
+def random_token(nbytes: int = 16) -> str:
+    """A random hex string with ``nbytes`` bytes of entropy, for ids that must not be guessed."""
+    if nbytes < 16:
+        raise ValueError("a token needs at least 16 bytes of entropy")
+    return secrets.token_hex(nbytes)
 
 
 def derive_stops(seed: bytes, strip_lens: list[int]) -> list[int]:

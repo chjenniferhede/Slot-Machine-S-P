@@ -4,11 +4,29 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Generator
+from dataclasses import dataclass
 
 import pytest
 
 from slotmachine import storage
 from slotmachine.money import Money
+
+
+@dataclass(frozen=True)
+class StubSession:
+    """Stands in for Layer 2's auth.Session until it lands. Same fields."""
+
+    user_id: int
+    username: str
+    role: str = "player"
+
+
+def make_player(conn: sqlite3.Connection, username: str) -> StubSession:
+    """A player with an empty account, and a session for them."""
+    with storage.transaction(conn):
+        uid = storage.create_user(conn, username, "not-a-real-hash", "player")
+        storage.create_account(conn, uid)
+    return StubSession(uid, username)
 
 
 @pytest.fixture()
@@ -35,6 +53,12 @@ def player(conn: sqlite3.Connection) -> int:
         storage.create_account(conn, uid)
         storage.adjust_balance(conn, uid, Money(20_000))
     return uid
+
+
+@pytest.fixture()
+def alice(player: int) -> StubSession:
+    """A session for the ``player`` fixture's user."""
+    return StubSession(player, "alice")
 
 
 def dump_all_text(conn: sqlite3.Connection) -> str:

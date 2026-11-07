@@ -29,6 +29,7 @@ class Action:
     ACCESS_GRANTED: Final[str] = "access.granted"
     ACCESS_DENIED: Final[str] = "access.denied"
     PAYMENT_METHOD_ADDED: Final[str] = "payment.method_added"
+    PAYMENT_METHOD_REMOVED: Final[str] = "payment.method_removed"
     DEPOSIT: Final[str] = "account.deposit"
     WITHDRAW: Final[str] = "account.withdraw"
     SESSION_BUYIN: Final[str] = "session.buyin"
