@@ -157,6 +157,14 @@ def validate_card(card: CardInput, today: date | None = None) -> str:
     return brand
 
 
+def has_expired(exp_month: int, exp_year: int, today: date | None = None) -> bool:
+    """True once the card's expiry month is over, by the UTC date."""
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    # A card works until the end of its expiry month.
+    return (exp_year, exp_month) < (today.year, today.month)
+
+
 def tokenize(card: CardInput) -> tuple[str, str, str]:
     """The mock payment processor. Returns (token, last4, brand).
 
@@ -192,8 +200,7 @@ def _check_expiry(month: object, year: object, today: date) -> None:
     if not _is_int(year) or year < 2000:
         raise PaymentError(f"enter the expiry year in full, for example {today.year + 3}")
 
-    # A card works until the end of its expiry month.
-    if (year, month) < (today.year, today.month):
+    if has_expired(month, year, today):
         raise PaymentError("this card has expired")
     if year > today.year + MAX_YEARS_AHEAD:
         raise PaymentError("the expiry year is too far in the future")

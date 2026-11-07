@@ -170,6 +170,48 @@ def adjust_balance(conn: sqlite3.Connection, user_id: int, delta: Money) -> Mone
     return get_balance(conn, user_id)
 
 
+def roll_over_daily_totals(conn: sqlite3.Connection, user_id: int, today: str) -> None:
+    """Start new daily deposit and withdrawal totals if the UTC date has changed."""
+    conn.execute(
+        "UPDATE accounts SET daily_deposit_cents = 0, daily_withdraw_cents = 0, day_bucket = ?"
+        " WHERE user_id = ? AND day_bucket <> ?",
+        (today, user_id, today),
+    )
+
+
+def record_deposit(conn: sqlite3.Connection, user_id: int, amount: Money) -> Money:
+    """Add a deposit to the balance and to today's deposit total. Returns the new balance."""
+    _require_positive(amount)
+    conn.execute(
+        "UPDATE accounts SET balance_cents = balance_cents + ?,"
+        " daily_deposit_cents = daily_deposit_cents + ? WHERE user_id = ?",
+        (amount.cents, amount.cents, user_id),
+    )
+    return get_balance(conn, user_id)
+
+
+def record_withdrawal(conn: sqlite3.Connection, user_id: int, amount: Money) -> Money:
+    """Take a withdrawal off the balance and add it to today's total. Returns the new balance.
+
+    The schema refuses a negative balance, so an overdraft fails here even if
+    the caller forgot to check.
+    """
+    _require_positive(amount)
+    conn.execute(
+        "UPDATE accounts SET balance_cents = balance_cents - ?,"
+        " daily_withdraw_cents = daily_withdraw_cents + ? WHERE user_id = ?",
+        (amount.cents, amount.cents, user_id),
+    )
+    return get_balance(conn, user_id)
+
+
+def _require_positive(amount: Money) -> None:
+    # A negative deposit is a withdrawal that skips the withdrawal checks.
+    # accounts.py refuses one first; this is the second line.
+    if not amount.is_positive():
+        raise StorageError("a deposit or withdrawal must be a positive amount")
+
+
 # ---------------------------------------------------------------------------
 # Payment methods
 # ---------------------------------------------------------------------------
@@ -196,6 +238,16 @@ def insert_payment_method(
     method_id = cur.lastrowid
     assert method_id is not None
     return method_id
+
+
+def get_payment_method(
+    conn: sqlite3.Connection, user_id: int, method_id: int
+) -> sqlite3.Row | None:
+    """One of this user's methods, or None if they have no method with that id."""
+    row = conn.execute(
+        "SELECT * FROM payment_methods WHERE id = ? AND user_id = ?", (method_id, user_id)
+    ).fetchone()
+    return cast("sqlite3.Row | None", row)
 
 
 def list_payment_methods(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:

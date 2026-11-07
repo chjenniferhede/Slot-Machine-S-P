@@ -38,5 +38,6 @@ files = [
     "src/slotmachine/rng.py",
     "src/slotmachine/audit.py",
     "src/slotmachine/payment.py",
+    "src/slotmachine/accounts.py",
     "src/slotmachine/game",
 ]
