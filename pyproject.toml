@@ -37,5 +37,7 @@ files = [
     "src/slotmachine/storage.py",
     "src/slotmachine/rng.py",
     "src/slotmachine/audit.py",
+    "src/slotmachine/auth.py",
+    "src/slotmachine/__main__.py",
     "src/slotmachine/game",
 ]

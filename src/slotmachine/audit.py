@@ -22,6 +22,7 @@ class Action:
     """Event names, in one place so two modules cannot spell one differently."""
 
     USER_REGISTER: Final[str] = "user.register"
+    BOOTSTRAP_TECHNICIAN_CREATED: Final[str] = "bootstrap.technician_created"
     LOGIN_SUCCESS: Final[str] = "auth.login.success"
     LOGIN_FAILURE: Final[str] = "auth.login.failure"
     LOCKOUT: Final[str] = "auth.lockout"

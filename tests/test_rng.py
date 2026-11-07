@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 from pathlib import Path
 
@@ -109,9 +110,9 @@ def test_no_insecure_random_anywhere() -> None:
     assert not offenders, f"insecure random imported in: {offenders}"
 
 
-def test_entropy_drawn_in_one_place() -> None:
-    """``secrets`` and ``os.urandom`` belong in rng.py and nowhere else yet."""
-    allowed = {"rng.py"}
+def test_entropy_drawn_only_in_approved_modules() -> None:
+    """Spin entropy lives in rng.py; auth.py also needs bootstrap credentials."""
+    allowed = {"rng.py", "auth.py"}
     offenders = [
         str(path.relative_to(SRC))
         for path in SRC.rglob("*.py")
@@ -119,3 +120,16 @@ def test_entropy_drawn_in_one_place() -> None:
         and ("secrets" in path.read_text() or "urandom" in path.read_text())
     ]
     assert not offenders, f"entropy drawn outside rng.py: {offenders}"
+
+
+def test_auth_entropy_is_for_credentials_only() -> None:
+    tree = ast.parse((SRC / "auth.py").read_text())
+    calls = [
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "secrets"
+    ]
+    assert calls and set(calls) == {"token_urlsafe"}
