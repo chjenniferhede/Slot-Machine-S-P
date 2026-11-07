@@ -40,4 +40,5 @@ files = [
     "src/slotmachine/payment.py",
     "src/slotmachine/accounts.py",
     "src/slotmachine/game",
+    "src/slotmachine/cli",
 ]
