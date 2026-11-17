@@ -39,7 +39,11 @@ class Action:
     SPIN: Final[str] = "game.spin"
     GAME_ENABLED: Final[str] = "game.enabled"
     GAME_DISABLED: Final[str] = "game.disabled"
+    GAME_INSTALLED: Final[str] = "game.installed"
     TEST_SESSION: Final[str] = "test.session"
+    STAFF_CREATED: Final[str] = "user.staff_created"
+    AUDIT_VERIFIED: Final[str] = "audit.verified"
+    SPIN_REPLAYED: Final[str] = "game.spin_replayed"
 
 
 @dataclass(frozen=True)

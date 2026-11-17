@@ -23,12 +23,23 @@ whole layer is complete.
 - [ ] [#3 — Layer 2: Identity](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/3) — implemented on this branch, including role checks on the real money APIs; review and merge pending.
 - [x] [#4 — Layer 3: Game domain](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/4) — engine, game configurations, and payout calculator.
 - [ ] [#5 — Layer 4: Money movement](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/5) — payment methods, deposits, withdrawals, buy-in, spins/holds, cash-out and startup recovery implemented on this branch; review and merge pending.
-- [ ] [#6 — Layer 5: Interfaces](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/6) — shared prompts and menus integrated; player, technician, and commissioner workflows remain.
-- [ ] [#7 — Layer 6: Assurance](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/7) — source scans, conservation, crash and tamper tests integrated; installation guide, manual, OWASP write-up and demo remain.
+- [x] [#6 — Layer 5: Interfaces](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/6) — player, technician and commissioner interfaces on branch `phase1-submission` (`cli/player.py`, `cli/technician.py`, `cli/commissioner.py`, `stats.py`); review pending.
+- [ ] [#7 — Layer 6: Assurance](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/7) — `docs/INSTALL.md`, `docs/MANUAL.md`, `docs/OWASP.md` and `docs/DEMO_SCRIPT.md` written; role-interface tests added; team rehearsal remains.
 
 Keep issue #8 open until all layers and the delivery checks below are complete.
 Closing a layer issue does not by itself establish that the integrated application
 has passed its end-to-end checks.
+
+## Branch `phase1-submission` (Nov 17)
+
+- Role interfaces wired to the existing Layer 2–4 APIs; shipped games installed on first run.
+- Technicians: enable/disable/install games (install refuses RTP ≥ 100% and id reuse), system
+  diagnostic, filtered audit log, chain verification, staff (commissioner/technician) creation.
+- Commissioners: live and test statistics with payout distribution, X-round test mode with
+  per-round seeds and CSV export, seed replay of any spin, PAR sheet.
+- Players: cards, deposit/withdraw, buy-in, spin, hold, bet change, cash-out (auto on logout),
+  own statistics.
+- 766 tests pass (+4 slow), strict mypy clean; the two role-module decorator tests now run.
 
 ## Next work and dependencies
 

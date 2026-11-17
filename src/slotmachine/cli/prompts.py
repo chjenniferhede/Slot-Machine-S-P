@@ -253,6 +253,24 @@ def prompt_password(label: str = "Password", *, new: bool = False) -> str:
         error("the two passwords did not match; please choose it again")
 
 
+def prompt_secret(label: str, *, max_length: int = SHORT_MAX) -> str:
+    """Text read without echo, such as a card number or security code.
+
+    Not shown on screen, so it cannot be read over a shoulder or end up in a
+    terminal's scrollback.
+    """
+
+    def parse(raw: str) -> str:
+        text = raw.strip()
+        if not text:
+            raise ValueError("please type something")
+        if not text.isprintable():
+            raise ValueError("letters, digits, spaces and punctuation only")
+        return text
+
+    return _ask(label, parse, max_length=max_length, secret=True)
+
+
 # ---------------------------------------------------------------------------
 # The loop every prompt shares
 # ---------------------------------------------------------------------------

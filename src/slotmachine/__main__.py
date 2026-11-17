@@ -1,4 +1,10 @@
-"""Database bootstrap and identity CLI; game and staff tools arrive in Layer 5."""
+"""Entry point: database setup, first-run bootstrap, login, and role dispatch.
+
+After login each role gets its own interface, and nothing else:
+players go to cli/player.py, technicians to cli/technician.py, commissioners
+to cli/commissioner.py. Each of those entry points carries @require_role, so
+dispatching to the wrong one is refused by the role gate, not just hidden.
+"""
 
 from __future__ import annotations
 
@@ -7,16 +13,31 @@ import getpass
 import sqlite3
 import sys
 
-from slotmachine import __version__, accounts, auth, storage
+from slotmachine import __version__, accounts, audit, auth, storage
+from slotmachine.cli.commissioner import commissioner_menu
+from slotmachine.cli.common import change_password as _change_password
+from slotmachine.cli.menus import run_action
+from slotmachine.cli.player import player_menu
+from slotmachine.cli.technician import technician_menu
+from slotmachine.game.spec import dump_spec
+from slotmachine.tools.rtpcalc import load_shipped_specs
 
 
-def _change_password(conn: sqlite3.Connection, session: auth.Session) -> None:
-    current = getpass.getpass("Current password: ")
-    new = getpass.getpass("New password (at least 12 characters): ")
-    if new != getpass.getpass("Confirm new password: "):
-        raise auth.AuthError("Passwords do not match.")
-    auth.change_password(conn, session, current, new)
-    print("Password changed.")
+def install_shipped_games(conn: sqlite3.Connection) -> int:
+    """Install the bundled games on a new database. Returns how many were added.
+
+    A game that is already installed is left exactly as it is: its rules
+    must never change under recorded spins, and a technician may have
+    disabled it on purpose.
+    """
+    added = 0
+    with storage.transaction(conn):
+        for spec in load_shipped_specs():
+            if storage.get_game(conn, spec.id) is None:
+                storage.upsert_game(conn, spec.id, spec.name, dump_spec(spec))
+                audit.write(conn, "system", audit.Action.GAME_INSTALLED, f"game={spec.id} name={spec.name}")
+                added = added + 1
+    return added
 
 
 def _account_menu(conn: sqlite3.Connection, session: auth.Session) -> None:
@@ -28,22 +49,20 @@ def _account_menu(conn: sqlite3.Connection, session: auth.Session) -> None:
         except auth.AuthError as exc:
             print(str(exc))
     print(f"Signed in as {session.username} ({session.role.value}).")
-    print("Game, payment, and staff tools will be added in Layer 5.")
-    while True:
-        choice = input("1 Change password | 2 Log out: ").strip()
-        if choice == "2":
-            return
-        if choice == "1":
-            try:
-                _change_password(conn, session)
-            except (auth.AuthError, auth.AccessDenied) as exc:
-                print(str(exc))
-        else:
-            print("Choose 1 or 2.")
+    interfaces = {
+        auth.Role.PLAYER: player_menu,
+        auth.Role.TECHNICIAN: technician_menu,
+        auth.Role.COMMISSIONER: commissioner_menu,
+    }
+    interface = interfaces[session.role]
+    run_action(lambda: interface(session, conn))
+    print(f"Logged out {session.username}.")
 
 
 def _identity_menu(conn: sqlite3.Connection) -> None:
     while True:
+        print()
+        print("  BIG CASINO SLOT MACHINE")
         choice = input("1 Log in | 2 Register player | 3 Quit: ").strip()
         if choice == "3":
             return
@@ -74,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         conn = storage.connect(args.db)
         storage.init_db(conn)
+        install_shipped_games(conn)
         accounts.recover_open_sessions(conn)
         password = auth.bootstrap_if_empty(conn)
         print(f"slotmachine {__version__}")
