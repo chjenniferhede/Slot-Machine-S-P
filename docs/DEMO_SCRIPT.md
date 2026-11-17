@@ -23,7 +23,11 @@ sqlite3 casino.db "DROP TRIGGER audit_log_is_immutable; UPDATE audit_log SET det
 
 Back in the app: Verify audit log integrity → `✗ TAMPERING DETECTED at entry 5: hash mismatch.`
 Do this **last**; afterwards the chain stays broken for that database.
-(`sqlite3` ships with macOS; on Windows use `python -c "import sqlite3; ..."`.)
+`sqlite3` ships with macOS. Without it (e.g. Windows), with the venv active:
+
+```sh
+python -c "import sqlite3; c=sqlite3.connect('casino.db'); c.executescript(\"DROP TRIGGER audit_log_is_immutable; UPDATE audit_log SET detail='nothing' WHERE id=5;\")"
+```
 
 ## Oral exam prep: every member should be able to
 
