@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Golden rooster with a crown">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3b0"/>
+      <stop offset="0.35" stop-color="#f7c948"/>
+      <stop offset="0.7" stop-color="#c98a10"/>
+      <stop offset="1" stop-color="#fbe38e"/>
+    </linearGradient>
+    <radialGradient id="velvet" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#d11a2a"/>
+      <stop offset="1" stop-color="#5e0610"/>
+    </radialGradient>
+    <linearGradient id="neck" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe07a"/>
+      <stop offset="1" stop-color="#d4900e"/>
+    </linearGradient>
+  </defs>
+  <circle cx="100" cy="100" r="97" fill="url(#gold)"/>
+  <circle cx="100" cy="100" r="87" fill="url(#velvet)"/>
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#f7c948" stroke-width="1.5" stroke-dasharray="3 5"/>
+  <!-- lucky sparkles -->
+  <g fill="#ffe680">
+    <path d="M40 70 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3z"/>
+    <path d="M160 150 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
+    <path d="M52 140 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z"/>
+  </g>
+  <!-- neck and head -->
+  <path d="M62 176 C 56 136, 66 104, 94 88 C 116 76, 142 84, 148 104 C 152 118, 146 130, 134 136 C 124 142, 120 152, 124 176 Z" fill="url(#neck)" stroke="#8a5a00" stroke-width="2"/>
+  <g fill="none" stroke="#b8760a" stroke-width="2.5" stroke-linecap="round">
+    <path d="M76 160 C 78 140, 86 124, 100 116"/>
+    <path d="M88 166 C 90 148, 98 134, 112 128"/>
+    <path d="M102 170 C 104 156, 110 146, 120 142"/>
+  </g>
+  <!-- comb -->
+  <path d="M94 88 C 88 72, 98 62, 106 72 C 106 58, 122 56, 121 72 C 128 60, 142 64, 134 82 C 126 90, 108 92, 94 88 Z" fill="#e3131b" stroke="#ffd34d" stroke-width="2"/>
+  <!-- crown -->
+  <path d="M98 56 L102 34 L112 46 L119 28 L126 46 L136 34 L139 56 Z" fill="url(#gold)" stroke="#8a5a00" stroke-width="1.5" stroke-linejoin="round"/>
+  <circle cx="119" cy="47" r="3.5" fill="#e3131b"/>
+  <circle cx="106" cy="50" r="2.5" fill="#2fa7ff"/>
+  <circle cx="132" cy="50" r="2.5" fill="#2fbf5a"/>
+  <!-- beak -->
+  <path d="M146 100 L170 108 L146 116 Z" fill="#ff9f1c" stroke="#8a5a00" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M146 108 L168 108" stroke="#8a5a00" stroke-width="1.2"/>
+  <!-- wattle -->
+  <path d="M140 118 C 150 122, 152 140, 140 146 C 130 140, 130 124, 140 118 Z" fill="#e3131b" stroke="#ffd34d" stroke-width="1.5"/>
+  <!-- eye -->
+  <circle cx="128" cy="100" r="7" fill="#fff"/>
+  <circle cx="130" cy="101" r="3.6" fill="#1a0a00"/>
+  <circle cx="131.5" cy="99" r="1.2" fill="#fff"/>
+</svg>

@@ -13,6 +13,8 @@ EXPECTED = {
     "run_system_diagnostic": {"technician"},
     "view_audit_log": {"technician"},
     "verify_audit_chain": {"technician"},
+    "install_game": {"technician"},
+    "create_staff_account": {"technician"},
     "run_test_session": {"commissioner"},
     "view_game_statistics": {"technician", "commissioner"},
     "view_spin_seeds": {"commissioner"},

@@ -78,6 +78,8 @@ ROLE_MATRIX: Mapping[str, frozenset[Role]] = MappingProxyType({
     "run_system_diagnostic": frozenset({Role.TECHNICIAN}),
     "view_audit_log": frozenset({Role.TECHNICIAN}),
     "verify_audit_chain": frozenset({Role.TECHNICIAN}),
+    "install_game": frozenset({Role.TECHNICIAN}),
+    "create_staff_account": frozenset({Role.TECHNICIAN}),
     "run_test_session": frozenset({Role.COMMISSIONER}),
     "view_game_statistics": frozenset({Role.TECHNICIAN, Role.COMMISSIONER}),
     "view_spin_seeds": frozenset({Role.COMMISSIONER}),
@@ -111,7 +113,8 @@ def validate_password_strength(pw: str) -> str | None:
     return None
 
 
-def _validate_username(username: str) -> None:
+def validate_username(username: str) -> None:
+    """Refuse a username outside the allowlist, with a message safe to show."""
     if re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", username) is None:
         raise AuthError("Use 3–32 letters, digits, dots, hyphens, or underscores for your username.")
 
@@ -215,7 +218,7 @@ def login(conn: sqlite3.Connection, username: str, password: str) -> Session:
 
 def register_player(conn: sqlite3.Connection, username: str, password: str) -> int:
     """Create a player and zero-balance account atomically; never accept a role."""
-    _validate_username(username)
+    validate_username(username)
     error = validate_password_strength(password)
     if error is not None:
         raise AuthError(error)
@@ -229,12 +232,21 @@ def register_player(conn: sqlite3.Connection, username: str, password: str) -> i
     return uid
 
 
+def generate_initial_password() -> str:
+    """A random one-time password for a new staff account: 18 bytes, URL-safe.
+
+    Shown once to whoever created the account, and useless after the forced
+    change at first login.
+    """
+    return secrets.token_urlsafe(18)
+
+
 def bootstrap_if_empty(conn: sqlite3.Connection) -> str | None:
     """Create tech-admin once; return its random password for terminal display only."""
     with storage.transaction(conn):
         if storage.count_users(conn) != 0:
             return None
-        password = secrets.token_urlsafe(18)
+        password = generate_initial_password()
         storage.create_user(conn, "tech-admin", hash_password(password), Role.TECHNICIAN.value, True)
         audit.write(conn, "tech-admin", audit.Action.BOOTSTRAP_TECHNICIAN_CREATED)
     return password

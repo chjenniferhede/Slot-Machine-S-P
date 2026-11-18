@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Casino Back Office</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/admin.css">
+  <script type="module" src="/admin.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <img src="/logo.svg" alt="" width="32" height="32">
+    <strong id="title"></strong>
+    <span class="grow"></span>
+    <span id="who" class="who"></span>
+    <button type="button" id="lang-toggle" class="link"></button>
+    <button type="button" id="logout" class="link"></button>
+  </header>
+  <div class="layout">
+    <nav id="side" class="side"></nav>
+    <main id="main" class="main"></main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

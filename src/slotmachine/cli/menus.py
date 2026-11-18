@@ -3,7 +3,8 @@
 Each role's interface is a set of nested menus. A menu action that fails is
 turned into one line here and the menu carries on:
 
-- A refusal from a lower layer (MoneyError, AccountError, PaymentError, AuthError, AccessDenied) is
+- A refusal from a lower layer (MoneyError, AccountError, PaymentError, AuthError,
+  AccessDenied, TechnicianError, CommissionerError) is
   shown as its message, which those layers write to be shown as-is.
 - Anything else is a bug. The user gets a fixed line that says nothing about
   the cause: a traceback would show file paths, library versions and the
@@ -27,12 +28,22 @@ from typing import Final
 
 from slotmachine.auth import AccessDenied, AuthError
 from slotmachine.accounts import AccountError
+from slotmachine.commissioner import CommissionerError
 from slotmachine.cli.prompts import INDENT, clean, error, info, prompt_int
 from slotmachine.money import MoneyError
 from slotmachine.payment import Caller, PaymentError
+from slotmachine.technician import TechnicianError
 
 # Expected errors whose messages are safe to show to the user.
-USER_ERRORS: Final[tuple[type[Exception], ...]] = (MoneyError, AccountError, PaymentError, AuthError, AccessDenied)
+USER_ERRORS: Final[tuple[type[Exception], ...]] = (
+    MoneyError,
+    AccountError,
+    PaymentError,
+    AuthError,
+    AccessDenied,
+    TechnicianError,
+    CommissionerError,
+)
 
 UNEXPECTED: Final[str] = "Something went wrong. Please try again."
 

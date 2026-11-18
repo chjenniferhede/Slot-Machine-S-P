@@ -116,6 +116,16 @@ def count_users(conn: sqlite3.Connection) -> int:
     return int(row["n"])
 
 
+def list_staff(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Technician and commissioner accounts, without their password hashes."""
+    return list(
+        conn.execute(
+            "SELECT id, username, role, must_change_pw, failed_count, locked_until, created_at"
+            " FROM users WHERE role IN ('technician', 'commissioner') ORDER BY role, username"
+        )
+    )
+
+
 def set_password_hash(conn: sqlite3.Connection, user_id: int, pw_hash: str) -> None:
     conn.execute(
         "UPDATE users SET pw_hash = ?, must_change_pw = 0 WHERE id = ?",
@@ -282,6 +292,22 @@ def upsert_game(
         " config_json = excluded.config_json",
         (game_id, name, config_json, int(enabled), utc_now()),
     )
+
+
+def insert_game_if_missing(
+    conn: sqlite3.Connection, game_id: str, name: str, config_json: str, enabled: bool = True
+) -> bool:
+    """Add a game unless one with this id exists. True if it was added.
+
+    Unlike upsert_game, an installed game is left exactly as it is, so its
+    rules and its enabled flag survive a restart.
+    """
+    cur = conn.execute(
+        "INSERT INTO games (id, name, config_json, enabled, created_at) VALUES (?, ?, ?, ?, ?)"
+        " ON CONFLICT(id) DO NOTHING",
+        (game_id, name, config_json, int(enabled), utc_now()),
+    )
+    return cur.rowcount == 1
 
 
 def get_game(conn: sqlite3.Connection, game_id: str) -> sqlite3.Row | None:

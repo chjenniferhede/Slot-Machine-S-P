@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, TypeGuard
 
-from slotmachine import audit, auth, rng, storage
+from slotmachine import audit, auth, rng, stats, storage
 from slotmachine.audit import Action
 from slotmachine.game import GameSpec, SpinResult, evaluate, load_spec
 from slotmachine.money import Money
@@ -263,6 +263,39 @@ def hold_and_respin(
     never from the caller.
     """
     return _play(session, conn, gs, respin=True, bet=None, held=held_reels)
+
+
+@auth.require_role(auth.Role.PLAYER)
+def list_playable_games(session: auth.Session, conn: sqlite3.Connection) -> list[GameSpec]:
+    """The enabled games a player may buy into, by name."""
+    return [load_spec(row["config_json"]) for row in storage.list_games(conn, enabled_only=True)]
+
+
+@auth.require_role(auth.Role.PLAYER)
+def current_game(session: auth.Session, conn: sqlite3.Connection) -> GameSession | None:
+    """The caller's open session, if any, so an interface never has to remember one.
+
+    The id comes from the database row owned by the caller, never from input.
+    """
+    row = storage.get_open_session(conn, session.user_id)
+    if row is None:
+        return None
+    return GameSession(id=int(row["id"]), game_id=str(row["game_id"]))
+
+
+@auth.require_role(auth.Role.PLAYER)
+def current_game_rules(session: auth.Session, conn: sqlite3.Connection) -> GameSpec | None:
+    """The rules of the caller's open game, even if it was disabled after buy-in."""
+    row = storage.get_open_session(conn, session.user_id)
+    if row is None:
+        return None
+    return _session_spec(conn, row)
+
+
+@auth.require_role(auth.Role.PLAYER)
+def own_statistics(session: auth.Session, conn: sqlite3.Connection) -> stats.PlayerSummary:
+    """The caller's own live play. There is no way to ask for someone else's."""
+    return stats.player_summary(conn, session.user_id)
 
 
 @auth.require_role(auth.Role.PLAYER)

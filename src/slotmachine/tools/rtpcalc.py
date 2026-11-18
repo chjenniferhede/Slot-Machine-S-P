@@ -25,13 +25,12 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
-from importlib import resources
 
 from slotmachine import rng
 from slotmachine.game.engine import evaluate
-from slotmachine.game.spec import GameSpec, load_spec
+from slotmachine.game.catalog import SHIPPED_SPECS, load_shipped_specs
+from slotmachine.game.spec import GameSpec
 
-SHIPPED_SPECS = ("classic_sevens.json", "five_line_deluxe.json")
 
 
 @dataclass(frozen=True)
@@ -337,16 +336,6 @@ def render(sheet: ParSheet) -> str:
     edge = 1 - (sheet.optimal_hold_rtp or sheet.base_rtp)
     out.append(f"    {'House edge':<20}{'':>5}   {'':>9}   {edge:>9.2%}")
     return "\n".join(out)
-
-
-def load_shipped_specs() -> list[GameSpec]:
-    """Load the games that ship with the system."""
-    specs = []
-    for filename in SHIPPED_SPECS:
-        spec_file = resources.files("slotmachine.game.specs").joinpath(filename)
-        text = spec_file.read_text(encoding="utf-8")
-        specs.append(load_spec(text))
-    return specs
 
 
 def main(argv: list[str] | None = None) -> int:

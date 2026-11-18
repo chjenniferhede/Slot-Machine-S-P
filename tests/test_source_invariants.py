@@ -570,8 +570,8 @@ def test_no_dynamic_imports() -> None:
 #: Each module whose every public function is a privileged action, and the
 #: one role allowed to run it.
 PRIVILEGED_MODULES: Final = (
-    ("cli/technician.py", "technician"),
-    ("cli/commissioner.py", "commissioner"),
+    ("technician.py", "technician"),
+    ("commissioner.py", "commissioner"),
 )
 
 

@@ -22,6 +22,7 @@ class Action:
     """Event names, in one place so two modules cannot spell one differently."""
 
     USER_REGISTER: Final[str] = "user.register"
+    USER_STAFF_CREATED: Final[str] = "user.staff_created"
     BOOTSTRAP_TECHNICIAN_CREATED: Final[str] = "bootstrap.technician_created"
     LOGIN_SUCCESS: Final[str] = "auth.login.success"
     LOGIN_FAILURE: Final[str] = "auth.login.failure"
@@ -37,6 +38,7 @@ class Action:
     SESSION_CASHOUT: Final[str] = "session.cashout"
     SESSION_RECOVERED: Final[str] = "session.recovered"
     SPIN: Final[str] = "game.spin"
+    GAME_INSTALLED: Final[str] = "game.installed"
     GAME_ENABLED: Final[str] = "game.enabled"
     GAME_DISABLED: Final[str] = "game.disabled"
     TEST_SESSION: Final[str] = "test.session"
