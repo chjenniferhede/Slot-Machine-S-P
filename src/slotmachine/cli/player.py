@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Final
 
-from slotmachine import accounts, auth, payment, stats, storage
+from slotmachine import accounts, auth, payment, stats
 from slotmachine.accounts import AccountError, GameSession, SpinOutcome
 from slotmachine.cli.common import change_password, heading, percent
 from slotmachine.cli.menus import MenuItem, menu, table
@@ -26,7 +26,7 @@ from slotmachine.cli.prompts import (
     prompt_yes_no,
     success,
 )
-from slotmachine.game import GameSpec, load_spec
+from slotmachine.game import GameSpec
 from slotmachine.game.engine import render_grid
 from slotmachine.money import Money
 
@@ -170,7 +170,9 @@ def _play(session: auth.Session, conn: sqlite3.Connection) -> None:
     gs = _resume_or_buy_in(session, conn)
     if gs is None:
         return
-    spec = _spec(conn, gs.game_id)
+    spec = accounts.current_game_rules(session, conn)
+    if spec is None:
+        return
     bet = Money(spec.bet_tiers[0])
     last: SpinOutcome | None = None
     _show_paytable(spec)
@@ -210,12 +212,12 @@ def _play(session: auth.Session, conn: sqlite3.Connection) -> None:
 
 
 def _resume_or_buy_in(session: auth.Session, conn: sqlite3.Connection) -> GameSession | None:
-    open_row = storage.get_open_session(conn, session.user_id)
-    if open_row is not None:
+    open_game = accounts.current_game(session, conn)
+    if open_game is not None:
         info("Resuming your open game.")
-        return GameSession(id=int(open_row["id"]), game_id=str(open_row["game_id"]))
+        return open_game
 
-    games = [load_spec(row["config_json"]) for row in storage.list_games(conn, enabled_only=True)]
+    games = accounts.list_playable_games(session, conn)
     if not games:
         info("No games are available right now.")
         return None
@@ -240,13 +242,6 @@ def _resume_or_buy_in(session: auth.Session, conn: sqlite3.Connection) -> GameSe
     gs = accounts.start_session(session, conn, spec.id, buyin)
     success(f"Bought in for {buyin}. Good luck!")
     return gs
-
-
-def _spec(conn: sqlite3.Connection, game_id: str) -> GameSpec:
-    row = storage.get_game(conn, game_id)
-    if row is None:
-        raise AccountError("that game is not available")
-    return load_spec(row["config_json"])
 
 
 def _choose_bet(spec: GameSpec) -> Money:
@@ -313,10 +308,9 @@ def _show_paytable(spec: GameSpec) -> None:
 def _cash_out_if_open(session: auth.Session, conn: sqlite3.Connection) -> None:
     """On logging out, return any credits left in a machine to the account."""
     try:
-        open_row = storage.get_open_session(conn, session.user_id)
-        if open_row is None:
+        gs = accounts.current_game(session, conn)
+        if gs is None:
             return
-        gs = GameSession(id=int(open_row["id"]), game_id=str(open_row["game_id"]))
         done = accounts.cash_out(session, conn, gs)
         info(f"Your open game was cashed out: {done.amount} returned to your account.")
     except (AccountError, auth.AccessDenied, sqlite3.Error):

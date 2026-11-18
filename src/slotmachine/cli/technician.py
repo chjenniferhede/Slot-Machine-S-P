@@ -13,6 +13,7 @@ public, guarded functions.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,7 @@ from slotmachine.cli.prompts import (
 from slotmachine.game import GameSpec, SpecError, load_spec
 from slotmachine.game.spec import dump_spec
 from slotmachine.money import Money
+from slotmachine.tools.rtpcalc import par_sheet, render
 
 Role = auth.Role
 
@@ -43,6 +45,24 @@ MAX_CONFIG_BYTES: Final[int] = 256 * 1024
 
 #: A game must keep the house edge positive, even against perfect hold play.
 MAX_RTP_PERCENT: Final[float] = 100.0
+
+# Limits on an installed game's shape. They keep the exact RTP proof quick
+# (it grows with symbols ** reels) and stop a config from being a denial of
+# service.
+MAX_REELS: Final[int] = 5
+MAX_SYMBOLS: Final[int] = 10
+MAX_STRIP: Final[int] = 128
+MAX_ROWS: Final[int] = 5
+MAX_PAYLINES: Final[int] = 20
+MAX_BET_TIERS: Final[int] = 6
+MAX_BET: Final[Money] = Money(100_000)  # $1,000.00
+MAX_HOLD_REELS: Final[int] = 3  # the perfect-hold proof grows fastest of all
+
+AUDIT_PAGE_MAX: Final[int] = 500
+FILTER_MAX: Final[int] = 64
+_TIMESTAMP: Final[re.Pattern[str]] = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}(?::[0-9]{2})?Z?)?", re.ASCII
+)
 
 
 class GameAdminError(RequestError):
@@ -93,10 +113,8 @@ def disable_game(session: auth.Session, conn: sqlite3.Connection, game_id: str) 
 def install_game(session: auth.Session, conn: sqlite3.Connection, config_path: str) -> GameSpec:
     """Add a new game from a JSON config file. It starts disabled, for review.
 
-    The file is parsed as JSON and validated field by field (never pickle or
-    any format that runs code), and refused if its maths would pay back 100%
-    or more. An installed game's rules can never be replaced, because past
-    spins must keep replaying to the same result; publish a new id instead.
+    The terminal's way in; the back office pastes the same JSON into
+    install_game_config. Both end in _install, so they apply the same checks.
     """
     path = Path(config_path).expanduser()
     if path.suffix.lower() != ".json":
@@ -109,11 +127,34 @@ def install_game(session: auth.Session, conn: sqlite3.Connection, config_path: s
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         raise GameAdminError("that file could not be read as UTF-8 text") from None
+    return _install(session, conn, text)
 
+
+@auth.require_role(Role.TECHNICIAN)
+def install_game_config(session: auth.Session, conn: sqlite3.Connection, config_json: str) -> GameSpec:
+    """Add a new game from JSON text pasted into the back office. It starts disabled."""
+    if not isinstance(config_json, str) or not config_json.strip():
+        raise GameAdminError("paste the game's JSON config")
+    if len(config_json.encode("utf-8")) > MAX_CONFIG_BYTES:
+        raise GameAdminError("that is too large to be a game config")
+    return _install(session, conn, config_json)
+
+
+def _install(session: auth.Session, conn: sqlite3.Connection, text: str) -> GameSpec:
+    """Validate, size-check, prove the house edge, then add the game disabled.
+
+    Parsed as JSON and validated field by field (never pickle or any format
+    that runs code). The size limits come before the RTP proof, because that
+    proof grows with symbols ** reels and a hostile config could otherwise
+    keep the program busy for years. An installed game's rules can never be
+    replaced, because past spins must keep replaying to the same result;
+    publish a new id instead.
+    """
     try:
         spec = load_spec(text)
     except SpecError as exc:
         raise GameAdminError(f"invalid game config: {exc}") from None
+    _check_size(spec)
     _check_house_edge(spec)
 
     with storage.transaction(conn):
@@ -122,6 +163,32 @@ def install_game(session: auth.Session, conn: sqlite3.Connection, config_path: s
         storage.upsert_game(conn, spec.id, spec.name, dump_spec(spec), enabled=False)
         audit.write(conn, session.username, Action.GAME_INSTALLED, f"game={spec.id} name={spec.name}")
     return spec
+
+
+def _check_size(spec: GameSpec) -> None:
+    if spec.reel_count > MAX_REELS:
+        raise GameAdminError(f"a game can have at most {MAX_REELS} reels")
+    if len(spec.symbols) > MAX_SYMBOLS:
+        raise GameAdminError(f"a game can have at most {MAX_SYMBOLS} symbols")
+    if any(len(reel) > MAX_STRIP for reel in spec.reels):
+        raise GameAdminError(f"a reel can have at most {MAX_STRIP} positions")
+    if spec.rows > MAX_ROWS:
+        raise GameAdminError(f"a game can show at most {MAX_ROWS} rows")
+    if len(spec.paylines) > MAX_PAYLINES:
+        raise GameAdminError(f"a game can have at most {MAX_PAYLINES} paylines")
+    if len(spec.bet_tiers) > MAX_BET_TIERS or any(tier > MAX_BET.cents for tier in spec.bet_tiers):
+        raise GameAdminError(f"a game can have at most {MAX_BET_TIERS} bets, each at most {MAX_BET}")
+    if spec.holds.enabled and spec.reel_count > MAX_HOLD_REELS:
+        raise GameAdminError(f"holds are allowed only on games with at most {MAX_HOLD_REELS} reels")
+
+
+@auth.require_role(Role.TECHNICIAN)
+def view_par_sheet(session: auth.Session, conn: sqlite3.Connection, game_id: str) -> str:
+    """A game's PAR sheet, to read before enabling a newly installed game."""
+    row = storage.get_game(conn, game_id) if isinstance(game_id, str) else None
+    if row is None:
+        raise GameAdminError("there is no game with that id")
+    return render(par_sheet(load_spec(row["config_json"]), samples=50_000))
 
 
 def _check_house_edge(spec: GameSpec) -> None:
@@ -197,9 +264,43 @@ def view_audit_log(
     actor: str | None = None,
     action: str | None = None,
     limit: int = 25,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    offset: int = 0,
 ) -> list[sqlite3.Row]:
-    """The newest audit entries, optionally for one user or one kind of event."""
-    return audit.read(conn, actor=actor, action=action, limit=limit)
+    """A page of audit entries, newest first, filtered by user, event or date."""
+    for value in (actor, action):
+        if value is not None and (not isinstance(value, str) or len(value) > FILTER_MAX):
+            raise GameAdminError(f"a filter can be at most {FILTER_MAX} characters")
+    if not _whole(limit) or not 1 <= limit <= AUDIT_PAGE_MAX:
+        raise GameAdminError(f"show between 1 and {AUDIT_PAGE_MAX} entries at a time")
+    if not _whole(offset) or offset < 0:
+        raise GameAdminError("the page must be 0 or more")
+    return audit.read(
+        conn,
+        actor=actor,
+        action=action,
+        since=_timestamp(since, end_of_day=False),
+        until=_timestamp(until, end_of_day=True),
+        limit=limit,
+        offset=offset,
+    )
+
+
+def _timestamp(value: str | None, *, end_of_day: bool) -> str | None:
+    """A date or date-time filter in the audit log's format. A bare date covers the whole day."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or _TIMESTAMP.fullmatch(value) is None:
+        raise GameAdminError("dates look like 2026-11-17 or 2026-11-17T09:30")
+    if len(value) == 10:
+        return value + ("T23:59:59Z" if end_of_day else "T00:00:00Z")
+    return value
+
+
+def _whole(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 @auth.require_role(Role.TECHNICIAN)
@@ -259,7 +360,8 @@ def _games_menu(session: auth.Session, conn: sqlite3.Connection) -> None:
             MenuItem("List games", lambda: _show_games(session, conn)),
             MenuItem("Enable a game (add to the playable interface)", lambda: _toggle(session, conn, True)),
             MenuItem("Disable a game (remove from the playable interface)", lambda: _toggle(session, conn, False)),
-            MenuItem("Install a new game from a JSON config file", lambda: _install(session, conn)),
+            MenuItem("Install a new game from a JSON config file", lambda: _install_from_file(session, conn)),
+            MenuItem("View a game's PAR sheet", lambda: _show_par(session, conn)),
         ],
         session,
     )
@@ -299,7 +401,11 @@ def _toggle(session: auth.Session, conn: sqlite3.Connection, enable: bool) -> No
         success(f"{game_id} is no longer playable. Open sessions on it can still cash out.")
 
 
-def _install(session: auth.Session, conn: sqlite3.Connection) -> None:
+def _show_par(session: auth.Session, conn: sqlite3.Connection) -> None:
+    print(view_par_sheet(session, conn, _pick_game_id(session, conn)))
+
+
+def _install_from_file(session: auth.Session, conn: sqlite3.Connection) -> None:
     info("The file is checked field by field and must keep the house edge positive.")
     path = prompt_text("Path to the .json file", max_length=512)
     spec = install_game(session, conn, path)
@@ -415,10 +521,12 @@ __all__ = [
     "disable_game",
     "enable_game",
     "install_game",
+    "install_game_config",
     "run_system_diagnostic",
     "technician_menu",
     "verify_audit_chain",
     "view_audit_log",
     "view_games",
+    "view_par_sheet",
     "view_users",
 ]

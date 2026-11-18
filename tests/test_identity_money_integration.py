@@ -25,6 +25,9 @@ PLAYER_ACTIONS = [
     (accounts.hold_and_respin, (None, [0])),
     (accounts.get_credits, (None,)),
     (accounts.cash_out, (None,)),
+    (accounts.list_playable_games, ()),
+    (accounts.current_game, ()),
+    (accounts.current_game_rules, ()),
 ]
 
 

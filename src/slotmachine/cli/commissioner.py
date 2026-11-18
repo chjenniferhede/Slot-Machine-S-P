@@ -22,7 +22,7 @@ from slotmachine import audit, auth, rng, stats, storage
 from slotmachine.audit import Action
 from slotmachine.cli.common import RequestError, change_password, heading, percent
 from slotmachine.cli.menus import MenuItem, menu, table
-from slotmachine.cli.prompts import info, prompt_int, prompt_yes_no, success
+from slotmachine.cli.prompts import info, prompt_int, prompt_money, prompt_yes_no, success
 from slotmachine.game import GameSpec, evaluate, load_spec
 from slotmachine.game.engine import render_grid
 from slotmachine.money import Money
@@ -31,6 +31,7 @@ from slotmachine.tools.rtpcalc import par_sheet, render
 Role = auth.Role
 
 MAX_TEST_ROUNDS: Final[int] = 100_000
+MAX_BANKROLL: Final[Money] = Money(100_000_000)  # $1,000,000.00
 ROUNDS_SHOWN: Final[int] = 20
 REPORT_DIR: Final[str] = "reports"
 
@@ -51,6 +52,12 @@ class GameAnalysis:
     figures: stats.GameFigures
     theory: stats.Theory
     distribution: stats.Distribution
+
+
+@auth.require_role(Role.COMMISSIONER)
+def list_games(session: auth.Session, conn: sqlite3.Connection) -> list[tuple[GameSpec, bool]]:
+    """Every installed game and whether it is playable. Disabled games can be tested too."""
+    return [(load_spec(row["config_json"]), bool(row["enabled"])) for row in storage.list_games(conn, enabled_only=False)]
 
 
 @auth.require_role(Role.COMMISSIONER)
@@ -104,6 +111,21 @@ class TestReport:
     spec: GameSpec
     bet: Money
     rounds: tuple[TestRound, ...]
+    rounds_requested: int = 0
+    start_bankroll: Money | None = None  # None: no bankroll, every round is played
+    replay_checked: int = 0
+    replay_ok: bool = False
+
+    @property
+    def end_bankroll(self) -> Money | None:
+        if self.start_bankroll is None:
+            return None
+        return self.start_bankroll - self.wagered + self.paid
+
+    @property
+    def stopped_early(self) -> bool:
+        """The bankroll ran out before every requested round was played."""
+        return len(self.rounds) < self.rounds_requested
 
     @property
     def wagered(self) -> Money:
@@ -135,14 +157,27 @@ class TestReport:
 
 @auth.require_role(Role.COMMISSIONER)
 def run_test_session(
-    session: auth.Session, conn: sqlite3.Connection, game_id: str, bet: Money, rounds: int
+    session: auth.Session,
+    conn: sqlite3.Connection,
+    game_id: str,
+    bet: Money,
+    rounds: int,
+    *,
+    bankroll: Money | None = None,
 ) -> TestReport:
     """Play ``game_id`` ``rounds`` times at ``bet`` with virtual money, recording every seed.
 
     Each round goes through the same RNG and engine as live play: a fresh
     32-byte seed from rng.secure_seed(), reel stops derived from it, and the
     same evaluate(). The rounds are stored as test spins, all in one
-    transaction with one audit entry.
+    transaction with one audit entry, so an interrupted test leaves nothing.
+
+    With ``bankroll``, the session also tracks a virtual balance and stops
+    when it cannot cover the next bet. It exists only in this call: no
+    account, wallet or game session is touched.
+
+    Afterwards every round is replayed from its stored seed; the report says
+    whether all of them reproduce exactly.
     """
     if isinstance(rounds, bool) or not isinstance(rounds, int) or not 1 <= rounds <= MAX_TEST_ROUNDS:
         raise TestSessionError(f"choose between 1 and {MAX_TEST_ROUNDS:,} rounds")
@@ -150,11 +185,19 @@ def run_test_session(
     if not isinstance(bet, Money) or bet.cents not in spec.bet_tiers:
         tiers = ", ".join(str(Money(t)) for t in spec.bet_tiers)
         raise TestSessionError(f"the bets on this game are {tiers}")
+    if bankroll is not None:
+        if not isinstance(bankroll, Money) or bankroll < bet:
+            raise TestSessionError(f"the bankroll must cover at least one bet of {bet}")
+        if bankroll > MAX_BANKROLL:
+            raise TestSessionError(f"the bankroll can be at most {MAX_BANKROLL}")
 
     played: list[TestRound] = []
     strip_lengths = spec.strip_lengths()
+    left = bankroll
     with storage.transaction(conn):
         for number in range(1, rounds + 1):
+            if left is not None and left < bet:
+                break
             seed = rng.secure_seed()
             stops = rng.derive_stops(seed, strip_lengths)
             payout = Money(evaluate(spec, stops, bet.cents).total_payout_cents)
@@ -170,15 +213,49 @@ def run_test_session(
                 is_test=True,
             )
             played.append(TestRound(number, spin_id, seed.hex(), tuple(stops), payout))
-        report = TestReport(spec=spec, bet=bet, rounds=tuple(played))
+            if left is not None:
+                left = left - bet + payout
+        report = TestReport(spec=spec, bet=bet, rounds=tuple(played), rounds_requested=rounds, start_bankroll=bankroll)
+        bankroll_note = "" if bankroll is None else f" bankroll={bankroll} left={report.end_bankroll}"
         audit.write(
             conn,
             session.username,
             Action.TEST_SESSION,
-            f"game={spec.id} bet={bet} rounds={rounds} spins={played[0].spin_id}-{played[-1].spin_id}"
-            f" wagered={report.wagered} paid={report.paid}",
+            f"game={spec.id} bet={bet} rounds={len(played)}/{rounds} spins={played[0].spin_id}-{played[-1].spin_id}"
+            f" wagered={report.wagered} paid={report.paid}{bankroll_note}",
         )
-    return report
+
+    checked, ok = _replay_rounds(conn, spec, session.user_id, played[0].spin_id, played[-1].spin_id)
+    return TestReport(
+        spec=spec,
+        bet=bet,
+        rounds=tuple(played),
+        rounds_requested=rounds,
+        start_bankroll=bankroll,
+        replay_checked=checked,
+        replay_ok=ok,
+    )
+
+
+def _replay_rounds(
+    conn: sqlite3.Connection, spec: GameSpec, user_id: int, first: int, last: int
+) -> tuple[int, bool]:
+    """Recompute every round of a test session from its stored seed: (rounds checked, all matched)."""
+    checked = 0
+    strips = spec.strip_lengths()
+    rows = conn.execute(
+        "SELECT seed, stops_json, bet_cents, payout_cents FROM test_spins"
+        " WHERE id BETWEEN ? AND ? AND user_id = ? ORDER BY id",
+        (first, last, user_id),
+    )
+    for row in rows:
+        checked = checked + 1
+        stops = rng.derive_stops(bytes(row["seed"]), strips)
+        if stops != [int(s) for s in json.loads(row["stops_json"])]:
+            return checked, False
+        if evaluate(spec, stops, int(row["bet_cents"])).total_payout_cents != int(row["payout_cents"]):
+            return checked, False
+    return checked, checked == last - first + 1
 
 
 @auth.require_role(Role.COMMISSIONER)
@@ -354,8 +431,11 @@ def _test_game(session: auth.Session, conn: sqlite3.Connection) -> None:
     print(table(["#", "Bet"], [[i, str(t)] for i, t in enumerate(tiers, start=1)]))
     bet = tiers[prompt_int("Bet #", minimum=1, maximum=len(tiers)) - 1]
     rounds = prompt_int("Number of rounds (X)", minimum=1, maximum=MAX_TEST_ROUNDS)
+    bankroll: Money | None = None
+    if prompt_yes_no("Stop early if a virtual bankroll runs out?", default=False):
+        bankroll = prompt_money("Virtual bankroll", minimum=bet, maximum=MAX_BANKROLL)
     info(f"Playing {spec.name} {rounds:,} times at {bet} with virtual money...")
-    report = run_test_session(session, conn, spec.id, bet, rounds)
+    report = run_test_session(session, conn, spec.id, bet, rounds, bankroll=bankroll)
     theory = stats.theoretical(spec)
 
     shown = report.rounds[:ROUNDS_SHOWN]
@@ -371,7 +451,7 @@ def _test_game(session: auth.Session, conn: sqlite3.Connection) -> None:
         ["Measure", "Value"],
         [
             ["Game", f"{spec.name} ({spec.id})"],
-            ["Rounds", f"{len(report.rounds):,}"],
+            ["Rounds", f"{len(report.rounds):,} of {report.rounds_requested:,}"],
             ["Bet per round", str(report.bet)],
             ["Spin ids", f"{report.rounds[0].spin_id} to {report.rounds[-1].spin_id}"],
             ["Total wagered (virtual)", str(report.wagered)],
@@ -380,9 +460,20 @@ def _test_game(session: auth.Session, conn: sqlite3.Connection) -> None:
             ["Payout frequency", f"{percent(report.hit_rate)} (theory {percent(theory.hit_rate)})"],
             ["Return to player", f"{percent(report.rtp)} (theory {percent(theory.base_rtp)})"],
             ["Biggest win", str(report.biggest)],
+            *(
+                []
+                if report.start_bankroll is None
+                else [["Virtual bankroll", f"{report.start_bankroll} -> {report.end_bankroll}"]]
+            ),
         ],
         align="<<",
     ))
+    if report.stopped_early:
+        info(f"The bankroll ran out after {len(report.rounds):,} of {report.rounds_requested:,} rounds.")
+    if report.replay_ok:
+        success(f"Replay verified: all {report.replay_checked:,} rounds reproduce from their seeds.")
+    else:
+        info("✗ REPLAY MISMATCH: a recorded round does not reproduce from its seed.")
     if prompt_yes_no("Save every round, with its seed, to a CSV file?", default=True):
         path = export_test_report(session, conn, report)
         success(f"Saved {path}")
@@ -418,6 +509,7 @@ __all__ = [
     "TestSessionError",
     "commissioner_menu",
     "export_test_report",
+    "list_games",
     "run_test_session",
     "view_game_statistics",
     "view_par_sheet",

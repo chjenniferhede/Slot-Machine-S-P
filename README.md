@@ -20,7 +20,8 @@ python -m pip install --upgrade pip
 python -m pip install --require-hashes -r requirements.txt
 python -m pip install --no-deps -e .
 slotmachine --init      # save the tech-admin password it prints
-slotmachine
+slotmachine             # terminal menus
+slotmachine --web       # or the same casino in a browser, on 127.0.0.1:8888
 ```
 
 ## What it does

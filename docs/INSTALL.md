@@ -72,7 +72,9 @@ python -m pip install --no-deps -e .
   any file whose SHA-256 does not match the one recorded in `requirements.txt`,
   so a tampered or substituted package cannot be installed.
 - The third installs the `slotmachine` program itself. `--no-deps` stops pip from
-  fetching anything that step two did not verify.
+  fetching anything that step two did not verify. (`-e` keeps the program linked to
+  this folder. A plain `pip install --no-deps .` also works: the database schema,
+  the game files and the web pages are packaged with it.)
 
 ## 5. Initialise the database and save the technician password
 
@@ -117,6 +119,30 @@ is a five-minute first-run walkthrough that creates one account of each role.
 
 `python -m slotmachine` works the same as `slotmachine`. To use a database file
 in another place, add `--db path/to/file.db`.
+
+### Or open the casino in a browser
+
+The same program has a web front end for all three roles. It uses only Python's
+standard library, so there is nothing more to install:
+
+```sh
+slotmachine --web
+```
+
+It prints `Casino open at http://127.0.0.1:8888/` and opens that page in your
+browser (open it yourself if it does not). Everyone logs in on that page; staff
+are taken to the back office. Press Ctrl-C in the terminal to close it.
+
+| Option | Meaning |
+|---|---|
+| `--port N` | Serve on another port, 1024–65535 (default 8888) |
+| `--no-browser` | Do not open a browser window |
+| `--db path/to/file.db` | Use another database, as above |
+
+The server listens on `127.0.0.1` only and cannot be reached from other machines.
+The technician's one-time password is printed in the terminal, never in the browser.
+The terminal menus and the browser use the same database and the same rules; use
+whichever you prefer, but run only one copy of the program per database at a time.
 
 ## 7. Optional: run the test suite
 

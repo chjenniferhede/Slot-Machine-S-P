@@ -23,10 +23,41 @@ from slotmachine.game.spec import dump_spec
 from slotmachine.money import Money
 from slotmachine.tools.rtpcalc import base_rtp, hit_frequency, optimal_hold_rtp
 
+#: How many past visits a player's statistics list.
+RECENT_SESSIONS = 10
+
 
 # ---------------------------------------------------------------------------
 # A player's own statistics
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GameLine:
+    """One game's totals inside a player's statistics."""
+
+    game_id: str
+    name: str
+    spins: int
+    wagered: Money
+    won: Money
+
+
+@dataclass(frozen=True)
+class SessionLine:
+    """One visit to a machine, from buy-in to cash-out, for a player's history."""
+
+    session_id: int
+    name: str
+    started_at: str
+    ended_at: str | None
+    spins: int
+    staked: Money
+    paid: Money
+
+    @property
+    def net(self) -> Money:
+        return self.paid - self.staked
 
 
 @dataclass(frozen=True)
@@ -38,6 +69,8 @@ class PlayerStats:
     won: Money
     biggest_payout: Money
     favourite_game: str | None
+    by_game: tuple[GameLine, ...] = ()
+    recent_sessions: tuple[SessionLine, ...] = ()
 
     @property
     def net(self) -> Money:
@@ -73,6 +106,21 @@ def view_own_statistics(session: auth.Session, conn: sqlite3.Connection) -> Play
         " WHERE s.user_id = ? GROUP BY s.game_id ORDER BY COUNT(*) DESC, g.name LIMIT 1",
         (session.user_id,),
     ).fetchone()
+    by_game = conn.execute(
+        "SELECT s.game_id, g.name, COUNT(*) AS spins, SUM(s.bet_cents) AS wagered,"
+        " SUM(s.payout_cents) AS won"
+        " FROM live_spins s JOIN games g ON g.id = s.game_id"
+        " WHERE s.user_id = ? GROUP BY s.game_id ORDER BY g.name",
+        (session.user_id,),
+    ).fetchall()
+    history = conn.execute(
+        "SELECT se.id, g.name, se.started_at, se.ended_at, COUNT(sp.id) AS spins,"
+        " COALESCE(SUM(sp.bet_cents), 0) AS staked, COALESCE(SUM(sp.payout_cents), 0) AS paid"
+        " FROM sessions se JOIN games g ON g.id = se.game_id"
+        " LEFT JOIN live_spins sp ON sp.session_id = se.id"
+        " WHERE se.user_id = ? GROUP BY se.id ORDER BY se.id DESC LIMIT ?",
+        (session.user_id, RECENT_SESSIONS),
+    ).fetchall()
     return PlayerStats(
         sessions=int(sessions["n"]),
         spins=int(row["spins"]),
@@ -81,6 +129,28 @@ def view_own_statistics(session: auth.Session, conn: sqlite3.Connection) -> Play
         won=Money(int(row["won"])),
         biggest_payout=Money(int(row["biggest"])),
         favourite_game=None if favourite is None else str(favourite["name"]),
+        by_game=tuple(
+            GameLine(
+                game_id=str(g["game_id"]),
+                name=str(g["name"]),
+                spins=int(g["spins"]),
+                wagered=Money(int(g["wagered"])),
+                won=Money(int(g["won"])),
+            )
+            for g in by_game
+        ),
+        recent_sessions=tuple(
+            SessionLine(
+                session_id=int(h["id"]),
+                name=str(h["name"]),
+                started_at=str(h["started_at"]),
+                ended_at=None if h["ended_at"] is None else str(h["ended_at"]),
+                spins=int(h["spins"]),
+                staked=Money(int(h["staked"])),
+                paid=Money(int(h["paid"])),
+            )
+            for h in history
+        ),
     )
 
 

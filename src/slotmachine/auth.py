@@ -78,6 +78,8 @@ ROLE_MATRIX: Mapping[str, frozenset[Role]] = MappingProxyType({
     "run_system_diagnostic": frozenset({Role.TECHNICIAN}),
     "view_audit_log": frozenset({Role.TECHNICIAN}),
     "verify_audit_chain": frozenset({Role.TECHNICIAN}),
+    "install_game": frozenset({Role.TECHNICIAN}),
+    "create_staff_account": frozenset({Role.TECHNICIAN}),
     "run_test_session": frozenset({Role.COMMISSIONER}),
     "view_game_statistics": frozenset({Role.TECHNICIAN, Role.COMMISSIONER}),
     "view_spin_seeds": frozenset({Role.COMMISSIONER}),

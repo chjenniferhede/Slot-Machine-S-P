@@ -84,6 +84,45 @@ This sets up one account of each kind, using the menus described in the rest of 
 
 ---
 
+## 3a. The web client
+
+`slotmachine --web` serves everything in this manual to a browser on the same
+machine (see INSTALL.md section 6). The terminal menus and the browser call the
+same role-gated functions, so every rule, limit and audit entry below applies to
+both. The browser adds:
+
+- **Two looks.** Players get *Jons Hop-Kings Utopia Casino*, a deliberately tacky
+  parody of an online casino: animated reels, a coin shower on a win, a ticker of
+  made-up jokes (it reads no real data), and a 中文 / EN switch at the top. Staff
+  get a plain back office with the same language switch.
+- **One login page.** Players, technicians and commissioners all log in on the
+  front page; staff go straight to the back office. A forced password change
+  comes first, exactly as in the terminal.
+- **Logging out cashes out** a player's open game, as leaving the terminal menu does.
+
+![Lobby](img/lobby.jpg)
+![Machine with a hold available](img/machine-hold.jpg)
+
+| Screen | Terminal equivalent |
+|---|---|
+| Lobby, machine, HOLD buttons, cash out | 4.3 Play a slot game |
+| Wallet (cards, deposit, withdraw) | 4.2 My account |
+| My stats (adds a per-game table and recent visits) | 4.4 |
+| Back office · Games (enable/disable, PAR sheet, **install by pasting JSON**) | 5.1 |
+| Back office · Diagnostic (per-game play and system checks) | 5.2 |
+| Back office · Audit log (filter by user, event and **date**, page through history, verify) | 5.3, 5.4 |
+| Back office · Accounts (all accounts; create technicians and commissioners) | 5.5 |
+| Back office · Analysis, Test session, Seed replay, PAR sheet | 6.1–6.5 |
+
+In the browser a test session can also take a **virtual bankroll** (it stops when
+the bankroll cannot cover the next bet) and can **export the CSV** to `reports/`
+in the folder the program was started from. The first 1,000 rounds are listed on
+screen; every round is recorded and replayed either way.
+
+![Diagnostic with system checks](img/tech-diagnostic.jpg)
+![Test session with a virtual bankroll](img/comm-test.jpg)
+![Seed replay](img/comm-replay.jpg)
+
 ## 4. Players
 
 ### 4.1 Register and log in
@@ -225,7 +264,8 @@ Log in with a technician account. On first login you must change the one-time pa
     2. Enable a game (add to the playable interface)
     3. Disable a game (remove from the playable interface)
     4. Install a new game from a JSON config file
-    5. Back
+    5. View a game's PAR sheet
+    6. Back
 ```
 
 - **List games** shows every installed game: id, name, playable or disabled, reel layout,
@@ -237,9 +277,12 @@ Log in with a technician account. On first login you must change the one-time pa
   because its spin history must stay on record.
 - **Install a new game** asks for the path to a game file in the same JSON format as
   `src/slotmachine/game/specs/classic_sevens.json`. The file is checked field by field,
-  refused if its maths would pay back 100% or more, and refused if its id is already in
-  use (a game's rules can never be changed under spins already played). A new game
-  starts **disabled**; check it with *List games*, then enable it.
+  refused if it is larger than the limits (at most 5 reels, 10 symbols, 128 positions per
+  reel, 5 rows, 20 paylines, 6 bets of up to $1,000), refused if its maths would pay back
+  100% or more, and refused if its id is already in use (a game's rules can never be
+  changed under spins already played). A new game starts **disabled**; read its PAR
+  sheet, then enable it. In the browser, paste the JSON instead of giving a path.
+- **View a game's PAR sheet** shows the reel strips, paytable, exact RTP and hit frequency.
 
   To try it: copy `classic_sevens.json`, change `"id"` to `"lucky_bells"` and `"name"`
   to `"Lucky Bells"`, and install that file.
@@ -324,6 +367,8 @@ under 1x, 1–2x, 2–5x, 5–20x, 20–100x and 100x or more of the stake.
 1. Choose the game (disabled games can be tested too, before they go live).
 2. Choose the bet.
 3. Enter the number of rounds X (1 to 100,000).
+4. Optionally give a virtual bankroll: the session then stops when the bankroll cannot
+   cover the next bet.
 
 The game is played X times with virtual money, through **exactly the same random number
 generator and payout engine as real play**. You then see:
@@ -331,7 +376,10 @@ generator and payout engine as real play**. You then see:
 - the first 20 rounds: round number, spin id, the **random seed** (64 hex characters),
   the reel stops, and the payout;
 - a summary for the session: rounds, total wagered and paid, wins and losses, payout
-  frequency and RTP next to their theoretical values, and the biggest win.
+  frequency and RTP next to their theoretical values, the biggest win, and the bankroll
+  before and after if you gave one;
+- a replay check: every round is re-derived from its stored seed, and the screen says
+  whether all of them reproduce exactly.
 
 You are then offered to save **every round with its seed** to a CSV file, written to
 `reports/test_<game>_spins_<first>-<last>.csv`, which opens in any spreadsheet program.

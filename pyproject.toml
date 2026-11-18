@@ -24,6 +24,14 @@ slotmachine-rtpcalc = "slotmachine.tools.rtpcalc:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Data files the code reads with importlib.resources. Without these lines a
+# regular (non-editable) install would ship without the schema, the games
+# or the web pages.
+[tool.setuptools.package-data]
+slotmachine = ["schema.sql"]
+"slotmachine.game" = ["specs/*.json"]
+"slotmachine.web" = ["static/*.html", "static/*.js", "static/*.css", "static/*.svg"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # The slow tests take minutes, so a plain `pytest` leaves them out.
@@ -47,4 +55,5 @@ files = [
     "src/slotmachine/stats.py",
     "src/slotmachine/game",
     "src/slotmachine/cli",
+    "src/slotmachine/web",
 ]
