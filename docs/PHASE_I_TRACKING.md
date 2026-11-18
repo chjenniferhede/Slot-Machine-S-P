@@ -11,59 +11,68 @@ commissioner interfaces, two mechanically distinct games, secure spin randomness
 and a tamper-evident audit log. Preserve one enforcement point for each security
 property: Money, the RNG, the audit writer, and the role decorator.
 
-This branch combines upstream `main` at
-`6ecbeffc51c3ab1253ee5e080c7be71336bf0fb9`, the Layer 2 identity patches, and
-the teammate's Layer 4–6 bundle through `2910060`. These changes await review
-and integration into `main`. Checked items below correspond to issues already
-closed as completed; a component implemented on this branch does not mean the
-whole layer is complete.
+`main` contains the merged identity and Layer 4–6 work (`d156463`). The
+`feat/web-client` branch adds the remaining application features and the
+delivery documents; it awaits review and merge. Checked items correspond to
+issues already closed as completed.
 
 - [x] [#1 — Layer 0: Foundation](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/1) — scaffold, Money, SQLite schema and transactions.
 - [x] [#2 — Layer 1: Integrity](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/2) — hash-chained audit log and secure RNG.
-- [ ] [#3 — Layer 2: Identity](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/3) — implemented on this branch, including role checks on the real money APIs; review and merge pending.
+- [ ] [#3 — Layer 2: Identity](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/3) — merged to `main`; staff account provisioning added on `feat/web-client`. Close after review.
 - [x] [#4 — Layer 3: Game domain](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/4) — engine, game configurations, and payout calculator.
-- [ ] [#5 — Layer 4: Money movement](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/5) — payment methods, deposits, withdrawals, buy-in, spins/holds, cash-out and startup recovery implemented on this branch; review and merge pending.
-- [ ] [#6 — Layer 5: Interfaces](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/6) — shared prompts and menus integrated; player, technician, and commissioner workflows remain.
-- [ ] [#7 — Layer 6: Assurance](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/7) — source scans, conservation, crash and tamper tests integrated; installation guide, manual, OWASP write-up and demo remain.
+- [ ] [#5 — Layer 4: Money movement](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/5) — merged to `main` and now driven by the player web pages. Close after review.
+- [ ] [#6 — Layer 5: Interfaces](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/6) — implemented on `feat/web-client` as a local web client for all three roles (see below); review pending.
+- [ ] [#7 — Layer 6: Assurance](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/7) — tests, scans, INSTALL.md, MANUAL.md and OWASP.md on `feat/web-client`; clean-machine install, demo rehearsal and teach-back remain (people, not code).
 
 Keep issue #8 open until all layers and the delivery checks below are complete.
-Closing a layer issue does not by itself establish that the integrated application
-has passed its end-to-end checks.
 
-## Next work and dependencies
+## What `feat/web-client` adds
 
-| Work | Dependencies | Next step |
+The team chose a browser interface for all roles in place of role menus in the
+terminal. The requirement allows a web front-end; the CLI remains for `--init`
+and the identity menu.
+
+- Startup installs the shipped games into a fresh database
+  (`game/catalog.py`, `__main__.startup`), so a new install is playable.
+- `stats.py`: read-only queries for player statistics, the technician
+  diagnostic and commissioner analysis; live and test spins never mix.
+- `technician.py`: enable/disable games (audited), install a game from JSON
+  with an exact-RTP check (starts disabled), PAR sheets, diagnostic, audit log
+  viewer and chain verification, staff account creation with one-time passwords.
+- `commissioner.py`: analysis, PAR sheets, and test sessions that use the real
+  RNG and engine with a virtual bankroll, show every seed, and replay every
+  round afterwards. No account is touched.
+- `accounts.py`: player game list, current game and own statistics.
+- `web/`: a standard-library HTTP server on 127.0.0.1 (`slotmachine --web`)
+  with Host/Origin/CSRF checks, HttpOnly SameSite=Strict cookies, a strict
+  CSP and no tracebacks; a bilingual parody casino for players and a plain
+  back office for staff.
+- The role-module decorator scan now covers `technician.py` and
+  `commissioner.py` (no more skipped tests). New tests drive every route over
+  real HTTP and scan the static files for HTML sinks and remote loads.
+- `pyproject.toml` now ships `schema.sql`, the game JSON and the web files, so
+  a regular (non-editable) install works. Before this, only editable installs did.
+- `tools/demo_seed.py` fills a throwaway database with play history for the demo.
+
+## Next work
+
+| Work | Owner | Notes |
 | --- | --- | --- |
-| Identity (#3) | #1 and #2 complete | Review the identity implementation and its integration tests on this branch. |
-| Money movement (#5) | Storage, audit, authenticated identities | Review atomic movements, mock payments, role checks and startup recovery; connect them to the player workflow. |
-| Interfaces (#6) | Shared framework integrated; full flows need #3, #4 and #5 | Build the three role menus and wire privileged actions through the role decorator. |
-| Assurance (#7) | Source and transaction checks integrated; final validation needs all layers | Finish INSTALL.md, MANUAL.md, OWASP.md, role-interface introspection coverage and delivery rehearsal. |
-
-Layer 3 is independent of Layer 2. Layers 0 and 1 no longer block identity work.
-Layer 5 remains the integration point for the first complete player demonstration.
-The branch includes repository agent skills and basic identity menus, plus the
-shared prompt/menu framework. Those menus do not expose the Layer 4 APIs yet
-and do not complete the Layer 5 game, payment, or staff interfaces.
-
-The teammate's seven commits are preserved in a merge. Integration replaces
-test session stubs with real `auth.Session` values, guards payment and account
-entry points with the player role and password-change gate, handles identity
-errors in the shared menu boundary, and recovers open sessions at startup.
-An interrupted action may retain an `access.granted` event; its balances,
-spin records and business audit events must still roll back together.
+| Review and merge `feat/web-client` | Team | One PR; describe the tests that ran. |
+| Close #3 and #5 | Maintainer | After the merge. |
+| Clean-machine install, twice | Someone who did not write it | Follow `docs/INSTALL.md` literally on another machine. |
+| Demo script and timing | Team | Under 10 minutes; use `tools/demo_seed.py` for history; rehearse the tamper check. |
+| Teach-back | Team | Each person explains a layer they did not write. |
 
 Run both `python -m pytest` and `python -m pytest -m slow`: the default run
-excludes the four slow conservation/RTP checks. Two role-module introspection
-tests remain skipped until technician and commissioner interfaces exist.
+excludes the four slow conservation/RTP checks (about 20 minutes together).
 Startup recovery assumes one running application per database.
 
-Integration validation on Windows with Python 3.12.1: hash-pinned dependencies
-and editable installation passed; the default suite passed 731 tests with two
-role-module tests skipped and four slow tests deselected. The separate slow
-run passed all four tests, including 100,000-spin conservation and one million
-RTP spins per game. Strict mypy passed on 14 source files, and the installed
-console-script/bootstrap/login/password-change smoke check passed. These results
-cover the implemented components, not the remaining role interfaces.
+Validation of `feat/web-client` on Windows: the default suite passed
+(922 tests, none skipped), the slow suite passed (4 tests, about 23 minutes),
+strict mypy passed on 22 source files, a wheel built from the branch
+installed into a clean virtual environment from the hash-pinned requirements,
+and all three roles were walked through in a browser.
 
 ## Timeline
 
@@ -105,18 +114,20 @@ about arbitrary code; specializing during implementation does not divide the exa
 
 ## Delivery checklist
 
+Items checked here are done on `feat/web-client` and still need the merge.
+
 - [ ] All seven layer issues are implemented, reviewed, and integrated.
 - [ ] Full pytest suite and configured strict mypy checks pass after integration.
-- [ ] Real technician and commissioner entry points carry `__required_roles__`;
+- [x] Real technician and commissioner entry points carry `__required_roles__`;
       the role matrix and forced password-change gate are tested end to end.
-- [ ] Player flow works from registration through deposit, buy-in, spins/holds,
+- [x] Player flow works from registration through deposit, buy-in, spins/holds,
       cash-out, withdrawal, and own statistics.
-- [ ] Technician diagnostics, game management, audit reading and verification work.
-- [ ] Commissioner analysis and seed-visible test mode leave live balances unchanged.
-- [ ] Conservation, interrupt/rollback, concurrency, and RTP checks in #7 pass.
+- [x] Technician diagnostics, game management, audit reading and verification work.
+- [x] Commissioner analysis and seed-visible test mode leave live balances unchanged.
+- [x] Conservation, interrupt/rollback, concurrency, and RTP checks in #7 pass.
 - [ ] Audit tamper demonstration is rehearsed, including the append-only trigger
       behavior and the documented limits of the chain.
-- [ ] `docs/INSTALL.md`, `docs/MANUAL.md`, and `docs/OWASP.md` are complete.
+- [x] `docs/INSTALL.md`, `docs/MANUAL.md`, and `docs/OWASP.md` are complete.
 - [ ] Installation instructions are followed literally from a clean clone on
       another machine, once mid-build and again before submission.
 - [ ] Team teach-back and timed demonstration are rehearsed.
