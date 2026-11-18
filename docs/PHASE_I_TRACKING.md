@@ -23,12 +23,47 @@ whole layer is complete.
 - [ ] [#3 — Layer 2: Identity](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/3) — implemented on this branch, including role checks on the real money APIs; review and merge pending.
 - [x] [#4 — Layer 3: Game domain](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/4) — engine, game configurations, and payout calculator.
 - [ ] [#5 — Layer 4: Money movement](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/5) — payment methods, deposits, withdrawals, buy-in, spins/holds, cash-out and startup recovery implemented on this branch; review and merge pending.
-- [ ] [#6 — Layer 5: Interfaces](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/6) — shared prompts and menus integrated; player, technician, and commissioner workflows remain.
-- [ ] [#7 — Layer 6: Assurance](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/7) — source scans, conservation, crash and tamper tests integrated; installation guide, manual, OWASP write-up and demo remain.
+- [x] [#6 — Layer 5: Interfaces](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/6) — player, technician and commissioner interfaces on branch `phase1-submission` (`cli/player.py`, `cli/technician.py`, `cli/commissioner.py`, `stats.py`); review pending.
+- [ ] [#7 — Layer 6: Assurance](https://github.com/chjenniferhede/Slot-Machine-S-P/issues/7) — `docs/INSTALL.md`, `docs/MANUAL.md`, `docs/OWASP.md` and `docs/DEMO_SCRIPT.md` written; role-interface tests added; team rehearsal remains.
 
 Keep issue #8 open until all layers and the delivery checks below are complete.
 Closing a layer issue does not by itself establish that the integrated application
 has passed its end-to-end checks.
+
+## Branch `phase1-submission` (Nov 17)
+
+- Role interfaces wired to the existing Layer 2–4 APIs; shipped games installed on first run.
+- Technicians: enable/disable/install games (install refuses RTP ≥ 100% and id reuse), system
+  diagnostic, filtered audit log, chain verification, staff (commissioner/technician) creation.
+- Commissioners: live and test statistics with payout distribution, X-round test mode with
+  per-round seeds and CSV export, seed replay of any spin, PAR sheet.
+- Players: cards, deposit/withdraw, buy-in, spin, hold, bet change, cash-out (auto on logout),
+  own statistics.
+- 766 tests pass (+4 slow), strict mypy clean; the two role-module decorator tests now run.
+
+## Branch `feat/combined` (Nov 17): `phase1-submission` plus the web client
+
+Back end from `phase1-submission`; the web front end and a few back-end pieces from
+`feat/web-client` (PR #10), merged by team decision.
+
+- `slotmachine --web`: a standard-library HTTP server on 127.0.0.1 serving a bilingual
+  player casino and a staff back office. Its JSON API calls the same role-gated functions
+  as the terminal menus (`cli/technician.py`, `cli/commissioner.py`, `accounts.py`,
+  `payment.py`, `stats.py`); Host/Origin/CSRF checks, HttpOnly SameSite=Strict cookies,
+  strict CSP, no tracebacks.
+- Technicians: install a game from pasted JSON as well as from a file, both with shape
+  limits checked before the RTP proof; PAR sheet; audit log date filters and paging.
+- Commissioners: game list; optional virtual bankroll; every test round replayed from its
+  seed after the session.
+- Players: role-gated `list_playable_games`, `current_game`, `current_game_rules` (the
+  terminal now uses them too); statistics add a per-game table and recent visits.
+- `install_game` and `create_staff_account` added to `ROLE_MATRIX`, with a test that
+  each matrix action matches its real entry points.
+- `storage.connect` waits up to 30 s for a lock instead of SQLite's 5 s default; the
+  concurrent-sessions conservation test failed about one run in five before.
+- Package data (`schema.sql`, game JSON, web files) declared, so a non-editable install works.
+- OWASP.md: web controls added; CWE-841 and CWE-94 removed (class-level / review-only),
+  every remaining ID checked at cwe.mitre.org.
 
 ## Next work and dependencies
 

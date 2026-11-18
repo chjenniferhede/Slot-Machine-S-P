@@ -78,6 +78,8 @@ ROLE_MATRIX: Mapping[str, frozenset[Role]] = MappingProxyType({
     "run_system_diagnostic": frozenset({Role.TECHNICIAN}),
     "view_audit_log": frozenset({Role.TECHNICIAN}),
     "verify_audit_chain": frozenset({Role.TECHNICIAN}),
+    "install_game": frozenset({Role.TECHNICIAN}),
+    "create_staff_account": frozenset({Role.TECHNICIAN}),
     "run_test_session": frozenset({Role.COMMISSIONER}),
     "view_game_statistics": frozenset({Role.TECHNICIAN, Role.COMMISSIONER}),
     "view_spin_seeds": frozenset({Role.COMMISSIONER}),
@@ -238,6 +240,36 @@ def bootstrap_if_empty(conn: sqlite3.Connection) -> str | None:
         storage.create_user(conn, "tech-admin", hash_password(password), Role.TECHNICIAN.value, True)
         audit.write(conn, "tech-admin", audit.Action.BOOTSTRAP_TECHNICIAN_CREATED)
     return password
+
+
+@require_role(Role.TECHNICIAN)
+def create_staff_account(session: Session, conn: sqlite3.Connection, username: str, role: Role) -> str:
+    """Create a technician or commissioner with a one-time random password.
+
+    Staff cannot register themselves: the only way in is an existing
+    technician running this. The password is returned once for the technician
+    to hand over, is never stored or logged in plain text, and must be changed
+    at first login, exactly like the bootstrap account.
+    """
+    if role not in (Role.TECHNICIAN, Role.COMMISSIONER):
+        raise AuthError("Staff accounts are technicians or commissioners.")
+    _validate_username(username)
+    password = secrets.token_urlsafe(18)
+    pw_hash = hash_password(password)
+    with storage.transaction(conn):
+        if storage.get_user_by_username(conn, username) is not None:
+            raise AuthError("That username is unavailable.")
+        storage.create_user(conn, username, pw_hash, role.value, must_change_pw=True)
+        audit.write(conn, session.username, audit.Action.STAFF_CREATED, f"{username} role={role.value}")
+    return password
+
+
+def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every account, without its password hash. For the technician's user list."""
+    return list(conn.execute(
+        "SELECT id, username, role, must_change_pw, failed_count, locked_until, created_at"
+        " FROM users ORDER BY role, username"
+    ))
 
 
 def must_change_password(conn: sqlite3.Connection, session: Session) -> bool:

@@ -35,7 +35,7 @@ def test_forced_change_before_account_menu(tmp_path, capsys):
     password = auth.bootstrap_if_empty(conn)
     conn.close()
     replacement = "A replacement technician phrase"
-    with patch("builtins.input", side_effect=["1", "tech-admin", "2", "3"]), patch(
+    with patch("builtins.input", side_effect=["1", "tech-admin", "7", "3"]), patch(
         "getpass.getpass", side_effect=[password, password, replacement, replacement]
     ):
         assert main(["--db", str(db)]) == 0
@@ -94,7 +94,7 @@ def test_access_denied_boundary(tmp_path, capsys):
 
 def test_cli_register_and_login(tmp_path, capsys):
     password = "A newly registered player's phrase"
-    with patch("builtins.input", side_effect=["2", "alice", "1", "ALICE", "2", "3"]), patch(
+    with patch("builtins.input", side_effect=["2", "alice", "1", "ALICE", "5", "3"]), patch(
         "getpass.getpass", side_effect=[password, password, password]
     ):
         assert main(["--db", str(tmp_path / "casino.db")]) == 0
@@ -110,7 +110,7 @@ def test_forced_change_retries_mismatch(tmp_path, capsys):
     password = auth.bootstrap_if_empty(conn)
     conn.close()
     replacement = "A replacement technician phrase"
-    with patch("builtins.input", side_effect=["1", "tech-admin", "2", "3"]), patch(
+    with patch("builtins.input", side_effect=["1", "tech-admin", "7", "3"]), patch(
         "getpass.getpass", side_effect=[
             password, password, replacement, "mismatch", password, replacement, replacement
         ]

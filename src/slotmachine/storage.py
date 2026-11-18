@@ -18,6 +18,11 @@ from slotmachine.money import Money
 
 DEFAULT_DB_PATH = "casino.db"
 
+#: How long a connection waits for another one's write to finish before
+#: giving up with "database is locked". SQLite's default of 5 seconds is too
+#: short when several terminals play at once on a loaded machine.
+BUSY_TIMEOUT_SECONDS = 30.0
+
 
 # ---------------------------------------------------------------------------
 # Connection
@@ -30,7 +35,7 @@ def connect(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     Foreign keys have to be switched on explicitly; SQLite ignores them
     otherwise. Transactions are handled by ``transaction()``, not by Python.
     """
-    conn = sqlite3.connect(str(path), isolation_level=None)
+    conn = sqlite3.connect(str(path), isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")

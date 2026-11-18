@@ -32,3 +32,6 @@ casino.db-shm
 .vscode/
 .idea/
 .DS_Store
+
+# Commissioner test-session exports
+reports/

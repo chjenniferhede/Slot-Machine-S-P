@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jons Hop-Kings Utopia Casino</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/casino.css">
+  <script type="module" src="/casino.js"></script>
+</head>
+<body>
+  <div class="ticker" aria-hidden="true"><div class="ticker-track" id="ticker"></div></div>
+
+  <header class="masthead">
+    <a class="brand" href="#/lobby">
+      <img src="/logo.svg" alt="" class="logo" width="96" height="96">
+      <span class="brand-text">
+        <span class="site-name" id="site-name"></span>
+        <span class="site-name-zh" id="site-name-zh"></span>
+        <span class="tagline" id="tagline"></span>
+      </span>
+    </a>
+    <div class="controls">
+      <button type="button" id="lang-toggle" class="chip"></button>
+      <button type="button" id="sound-toggle" class="chip"></button>
+    </div>
+  </header>
+
+  <nav id="nav" class="nav"></nav>
+  <section class="banner" id="banner" aria-live="off"></section>
+  <main id="main" class="main"></main>
+  <footer class="footer" id="footer"></footer>
+
+  <button type="button" class="support-button" id="support-button"></button>
+  <div class="support-bubble" id="support-bubble" hidden></div>
+  <div class="coin-layer" id="coins" aria-hidden="true"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
